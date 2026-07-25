@@ -1,17 +1,226 @@
-# workout_tracker
+# Workout Tracker
 
-A new Flutter project.
+A logbook, not a fitness app.
 
-## Getting Started
+It does one thing: tell you what you lifted last time, and record what you lift today. It has no timers, no streaks, no badges, no notifications, and no opinion about whether you trained hard enough.
 
-This project is a starting point for a Flutter application.
+> **Status:** design complete, implementation in progress. This README describes the intended v1.
 
-A few resources to get you started if this is your first Flutter project:
+---
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Why
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+I tracked my training in a spreadsheet for thirty weeks. Every workout app I tried asked me to do more work than the spreadsheet did — define units, pick a program, start a timer, close out a session, dismiss a notification about my streak.
+
+The spreadsheet won because it did exactly one useful thing well: I could glance at last week's cell and know what to load.
+
+So this app is a port of the spreadsheet, not a replacement for it. The design brief was: **keep everything the sheet got right, fix only the things it got wrong.**
+
+**What the sheet got right**
+
+- One glance gives you last week's numbers
+- Zero setup, zero ceremony, no concept of a "finished" workout
+- Notation dense enough to read a whole exercise in one line
+- Numbers mean whatever I want them to mean
+
+**What the sheet got wrong**
+
+- Google Drive sync failures silently lost entries
+- The numbers are trapped inside text — nothing is chartable
+- Exercise names drift (`Rear delt`, `Reat Delt`, `rear delt`) and break history lookup
+- Finding one lift's history means scrolling thirty week-blocks
+
+---
+
+## The notation
+
+The app reads and writes the shorthand I already used. A digit run is a list of *set numbers*:
+
+```
+Bench @45 12345-8              five sets of 8 at 45
+Incline @45 12-8 345-6         sets 1–2 for 8 reps, sets 3–5 for 6
+Tricep M 1@120-18 2345@130-10  weight changes mid-exercise
+Leg curl 1@90-4 234@80-7       failed at 90, dropped to 80
+Curl M @41kg 1234-10           units only when they'd surprise you
+```
+
+Sets are stored as individual rows and *rendered* back into this notation. That's the whole trick: the database stays clean and chartable, the display stays dense and readable.
+
+---
+
+## Core concepts
+
+**Exercises** are canonical. One row per movement, so renaming `Reat Delt` fixes every session retroactively.
+
+**Routines** are permanent templates — Shoulders/Traps, Legs, Back, Chest, Arms. Each holds an ordered list of exercises and any superset pairings. Each has a *default weekday*, which only controls what the app opens on.
+
+**Sessions** are one actual training day: a date plus whichever routine you picked. Don't feel like chest on Thursday? Pick Arms. It logs as Arms, on Thursday's real date.
+
+Routines and weekdays are separate on purpose. See [Design decisions](#design-decisions).
+
+---
+
+## How logging works
+
+A **set is an atomic (weight, reps) pair.** You confirm one, then the next.
+
+```
+Bench
+last time  @45 12345-8 · 7 days ago
+
+weight [ 45 ]    reps [    ]     [ Confirm ]
+```
+
+- **Weight pre-fills** from your last set and carries forward. You only touch it when you change the load.
+- **Reps start empty** and must be entered. You can't confirm a set you didn't do.
+- **Confirmed sets write immediately.** There is no save button and no draft state.
+- **You stop when you stop.** Four sets instead of five isn't an event — it's just four rows.
+
+Nothing reaches the database that you didn't deliberately confirm.
+
+**Reading the session** — a card showing numbers is done; a card showing an age hasn't been started. No checkmarks, no progress bar.
+
+**Adding mid-session** is one tap. It's a one-off by default; a toggle adds it to the routine permanently.
+
+**Supersets** live in the routine, so a pair you've linked once stays linked, and both exercises sit on one card for alternating entry.
+
+---
+
+## Screens
+
+Four, plus an export button.
+
+| Screen | Purpose |
+|---|---|
+| **Session** | Today's routine. Where you spend all your time. |
+| **Session list** | Reverse chronological. Tap to open any past session *in the same editor*. |
+| **Exercise history** | One lift, newest first. The "scroll back through the sheet" move, filtered. |
+| **Routine settings** | Edit templates: exercises, order, superset pairs. |
+
+---
+
+## Export
+
+One workbook, two sheets:
+
+- **`Log`** — the original grid. Week rows, routine columns, collapsed notation in each cell.
+- **`Data`** — flat, one row per set: `date, week, routine, exercise, set_number, weight, reps`.
+
+The grid keeps the format I've read for thirty weeks. The flat sheet is what makes charts possible — drop a pivot on it and you have bench weight over time in four clicks.
+
+Export is also the backup story. See [Known limitations](#known-limitations).
+
+---
+
+## What this deliberately does not do
+
+This list is a feature. Every item was considered and rejected.
+
+- **No rest timers**
+- **No streaks, reminders, badges, or notifications**
+- **No 1RM estimates, volume totals, or tonnage** — weights aren't comparable across exercises (see below), so these numbers would be meaningless
+- **No body weight or measurement tracking**
+- **No unit conversion or unit selection**
+- **No completion flags, summary screens, or "end workout" button**
+- **No "you've done this 3 times, add it to your routine?" nudges**
+- **No account, no server, no sync**
+- **No in-app charts in v1** — planned for phase 3, pull-only, attached to exercise history
+
+---
+
+## Design decisions
+
+Every non-obvious decision traces to something in thirty weeks of real data.
+
+**Routines are decoupled from weekdays.**
+In Week 3 I did chest on Friday and arms on Saturday. In Week 25, chest landed on Wednesday. The spreadsheet's columns weren't days — they were routines wearing a day's name. Separating them makes swapping a non-event.
+
+**Sessions pre-fill from the routine template, never from the last session.**
+Week 16's Monday has three exercises where Week 15's had five. If each session copied the previous one, a single short workout would truncate the routine permanently and silently.
+
+**"Last time" is a per-exercise lookup across all history, and displays its age.**
+Decline bench ran Weeks 2–7, disappeared for roughly seventeen weeks, and came back in Week 25. Any lookup keyed to "last session" returns nothing there. And `· 17 weeks ago` is very different information from `· 7 days ago` when you're loading the bar.
+
+**Ad-hoc exercises are one-offs by default.**
+Calf Machine appears exactly once in thirty weeks. Dip Machine appeared in Week 5 and stayed for months. Auto-adding everything would have quietly filled the Legs routine with three leg-press variants I tried once.
+
+**A set is an atomic (weight, reps) pair.**
+`Leg curl 1@90-4 234@80-7` — weight changes mid-exercise constantly. Treating weight as an exercise-level field would make the common real case an exception.
+
+**Weight is an opaque number, meaningful only within one exercise.**
+`@45` on bench means 45 lb plates per side. `@150` is a machine stack. `@41kg` is a machine labelled in kilos. There is no conversion and no cross-exercise math, because there is no correct answer.
+
+**Everything writes immediately, locally.**
+The gaps in my spreadsheet aren't sloppy logging — they're Google Drive sync failures. Data loss is the specific problem this app exists to solve.
+
+---
+
+## Data model
+
+SQLite via [Drift](https://drift.simonbinder.eu/). Six tables.
+
+```
+exercises          id, name UNIQUE COLLATE NOCASE
+
+routines           id, name, default_weekday, position
+
+routine_exercises  id, routine_id, exercise_id, position, superset_group
+                   → the template
+
+sessions           id, date, routine_id, note, created_at
+                   UNIQUE (date, routine_id)
+
+session_exercises  id, session_id, exercise_id, position, superset_group
+                   → what actually happened
+
+set_entries        id, session_exercise_id, set_number,
+                   weight NOT NULL, reps NOT NULL, created_at
+```
+
+The constraints carry the rules:
+
+- **`weight`/`reps` NOT NULL** — a partial set is unrepresentable
+- **`UNIQUE (date, routine_id)`** — reopening Thursday-Chest finds your session; Thursday-Arms starts a new one
+- **`NOCASE`** on exercise names — stops `Rear delt` and `rear delt` becoming two lifts
+- **`ON DELETE RESTRICT`** on exercises — history can never be orphaned
+
+**Deliberately absent:** no `is_complete`, no draft state, no weights in templates, no units column, no stored volume or 1RM, no `week_number`. Week numbers derive from the earliest session, so importing history renumbers everything automatically.
+
+**Behavioral requirements:**
+
+- Deleting a set renumbers the sets above it, or the collapse function renders nonsense
+- Deleting an exercise's last set removes the `session_exercises` row, reverting the card to its reference line
+- Removing an exercise from a routine deletes one `routine_exercises` row and never touches session history
+- Sessions are created lazily, on the first confirmed set — opening the app and logging nothing leaves no trace
+- Dates are local device dates stored as plain date strings, never UTC timestamps
+
+The session screen is a **merge**, not a table read: cards come from `routine_exercises`, any with `session_exercises` rows for today show today's numbers, and ad-hoc additions appear with no template row.
+
+---
+
+## Stack
+
+- **Flutter** — Android and iOS
+- **Drift / SQLite** — local-only persistence, reactive queries
+- **Excel export** — two-sheet workbook via the share sheet
+
+---
+
+## Roadmap
+
+**v1 — core logbook**
+Seeded routines, session logging with per-exercise references, add-as-you-go, routine picker, session list, exercise history, Excel export.
+
+**v2 — spreadsheet importer**
+Parses thirty weeks of legacy TSV notation and backfills every routine, exercise, and set. Needs a review-and-confirm step, since the source notation has real drift in it. Three hooks are already in place for this: session date is always a parameter rather than `DateTime.now()`, week numbers derive from the earliest session, and writes go through a batched transaction.
+
+**v3 — charts**
+Attached to exercise history, never a dashboard. One dot per set, x = date, y = weight, reps as the tap label — because plotting weight alone would show Bench as a flat line for thirty weeks while the reps climbed 8 → 15. No trendlines, no projections, no PR badges.
+
+---
+
+## Known limitations
+
+**Local-only means losing the phone loses the data.** The Excel export is the backup, and it is manual by design — reminders are on the anti-scope list. That's a tradeoff I'm accepting, not a solved problem.
+
+**Never merge exercises across machines.** `Lat pulldown`, `Plate Lat pulldown`, and `Pulldown M` are three machines with incompatible scales. Renaming is retroactive and safe for typos; merging them would invent a progression cliff that never happened.
