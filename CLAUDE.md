@@ -103,6 +103,20 @@ lib/widgets/       shared components
 
 Pure logic takes plain Dart records, never Drift row objects.
 
+## State
+
+No state management package. Drift streams + StreamBuilder for persisted
+state; StatefulWidget for ephemeral input. Do not add Riverpod, Bloc,
+Provider, or GetX without asking — the database is the source of truth
+and unconfirmed input must stay local to the widget.
+
+## Navigation
+
+Navigator.push with MaterialPageRoute. Do not add GoRouter, auto_route,
+or any routing package — four screens, one level deep, no deep links.
+SessionScreen takes date + routineId and is reused for past sessions;
+there is no separate read-only view.
+
 ## Milestone 1
 
 One vertical slice. Nothing else.
