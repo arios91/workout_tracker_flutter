@@ -2,6 +2,8 @@
 
 Working instructions for this repo. Design rationale lives in `README.md` — read it first, and don't restate it here.
 
+Keep your replies extremely concise and focus on conveying the key information. No unnecessary fluff, no long code snippets.
+
 ## What this is
 
 A local-only workout logbook in Flutter. Its entire job: show what I lifted last time, record what I lift today. Deliberate minimalism is the product thesis, not a shortcut.
@@ -90,6 +92,16 @@ If a task seems to need one of these, stop and ask.
 - Prefer small diffs to large rewrites. Don't scaffold beyond what the task asks for.
 - No `// ignore:` comments to quiet the analyzer.
 - Test the pure logic properly: collapse function, week derivation, set renumbering. Don't chase widget-test coverage for its own sake.
+
+## Structure
+
+lib/db/            Drift tables, database, seeds
+lib/repositories/  all queries
+lib/logic/         pure functions — must not import from db/
+lib/screens/       one file per screen
+lib/widgets/       shared components
+
+Pure logic takes plain Dart records, never Drift row objects.
 
 ## Milestone 1
 
