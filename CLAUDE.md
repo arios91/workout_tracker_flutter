@@ -38,6 +38,8 @@ set_entries        id, session_exercise_id, set_number,
                    weight NOT NULL, reps NOT NULL, created_at
 ```
 
+`weight` is a decimal (`RealColumn`) — the log contains `@27.5` and `@22.5`.
+
 `routine_exercises` and `session_exercises` are independent on purpose. The session screen is a **merge**: cards come from the template, any with `session_exercises` rows for today show today's numbers, ad-hoc additions have no template row.
 
 ## Invariants
@@ -68,7 +70,9 @@ Pure function: ordered sets → display notation.
 [(90,4),(80,7),(80,7),(80,7)]            → "1@90-4 234@80-7"
 ```
 
-Group consecutive sets sharing weight and reps. Hoist weight to a `@W` prefix if constant throughout, otherwise inline per run. Keep it pure and side-effect free — it renders both the session cards and the Excel `Log` sheet. Unit test it against `test/fixtures/sample_weeks.tsv`.
+Group consecutive sets sharing weight and reps. Hoist weight to a `@W` prefix if constant throughout, otherwise inline per run. Keep it pure and side-effect free — it renders both the session cards and the Excel `Log` sheet.
+
+Test with table-driven inline cases in `test/collapse_test.dart`. Do not use a TSV fixture here — the legacy log holds parser input, not collapse output, and contains forms collapse can never emit (`@ 45` spacing, `kg` suffixes). A curated round-trip fixture (`collapse(parse(cell)) == cell`) belongs in v2, once the parser exists.
 
 ## Do not add
 
@@ -86,36 +90,57 @@ These were considered and rejected. Do not implement them, suggest them in code,
 
 If a task seems to need one of these, stop and ask.
 
+## Structure
+
+```
+lib/db/            Drift tables, database, seeds
+lib/repositories/  all queries
+lib/logic/         pure functions — must not import from db/
+lib/screens/       one file per screen
+lib/widgets/       shared components
+lib/theme.dart
+```
+
+Pure logic takes plain Dart records, never Drift row objects. Dependencies flow one direction: screens → repositories → db. `logic/` depends on nothing.
+
+## State
+
+No state management package. Drift streams plus `StreamBuilder` for persisted state; `StatefulWidget` for ephemeral input. Do not add Riverpod, Bloc, Provider, or GetX without asking — the database is the single source of truth, and unconfirmed input must stay local to the widget (invariant 1).
+
+## Navigation
+
+`Navigator.push` with `MaterialPageRoute`. Do not add GoRouter, auto_route, or any routing package — four screens, one level deep, no deep links.
+
+`SessionScreen` takes a date and routine id and is reused for past sessions. There is no separate read-only viewer.
+
+## Theme
+
+`lib/theme.dart`, Material 3, dark-first (`ThemeMode.system` supported).
+
+Monospace with tabular figures for all numbers and collapsed notation — set rows must column-align. System font for labels and exercise names.
+
+```
+accent           #008AC9   focus rings, active borders, accent text
+button / pressed #006E9F   filled buttons, pressed state
+onPrimary        white
+background       #0D1113
+surface / input  #181D21
+border           #2F373E
+text primary     #E4E9ED
+text secondary   #7D878F
+text muted       #5C666E   set numbers
+```
+
+`ColorScheme.fromSeed` must be overridden with `copyWith` — seeding alone returns a washed-out tone-80 derivative, not these values.
+
+One accent color, used only for Confirm. No color-coding of progress or performance. Minimum 56dp tap targets. Respect system text scaling.
+
 ## Conventions
 
 - Business logic out of widgets. Queries in a repository layer, pure transforms in plain Dart.
 - Prefer small diffs to large rewrites. Don't scaffold beyond what the task asks for.
 - No `// ignore:` comments to quiet the analyzer.
 - Test the pure logic properly: collapse function, week derivation, set renumbering. Don't chase widget-test coverage for its own sake.
-
-## Structure
-
-lib/db/            Drift tables, database, seeds
-lib/repositories/  all queries
-lib/logic/         pure functions — must not import from db/
-lib/screens/       one file per screen
-lib/widgets/       shared components
-
-Pure logic takes plain Dart records, never Drift row objects.
-
-## State
-
-No state management package. Drift streams + StreamBuilder for persisted
-state; StatefulWidget for ephemeral input. Do not add Riverpod, Bloc,
-Provider, or GetX without asking — the database is the source of truth
-and unconfirmed input must stay local to the widget.
-
-## Navigation
-
-Navigator.push with MaterialPageRoute. Do not add GoRouter, auto_route,
-or any routing package — four screens, one level deep, no deep links.
-SessionScreen takes date + routineId and is reused for past sessions;
-there is no separate read-only view.
 
 ## Milestone 1
 
@@ -124,7 +149,7 @@ One vertical slice. Nothing else.
 - Drift schema and migration
 - Seed the five routines with default weekdays: Shoulders/Traps (Mon), Legs (Tue), Back (Wed), Chest (Thu), Arms (Fri) — empty exercise lists
 - Session screen: opens on today's routine, header shows routine and date
-- Add an exercise to the session (creates it in `exercises` if new, appends to the routine)
+- Add an exercise to the session — creates it in `exercises` if new, and **always appends it to the routine**. M1 has no one-off path; routines seed empty, so this is the only bootstrap. The permanence toggle lands in M2.
 - Entry loop: weight pre-filled and carried forward, reps empty and required, Confirm writes one row immediately
 - Card collapses to notation via the collapse function
 - Everything survives app restart
