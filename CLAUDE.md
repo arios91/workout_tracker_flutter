@@ -2,8 +2,6 @@
 
 Working instructions for this repo. Design rationale lives in `README.md` — read it first, and don't restate it here.
 
-Keep your replies extremely concise and focus on conveying the key information. No unnecessary fluff, no long code snippets.
-
 ## What this is
 
 A local-only workout logbook in Flutter. Its entire job: show what I lifted last time, record what I lift today. Deliberate minimalism is the product thesis, not a shortcut.
@@ -12,12 +10,11 @@ A local-only workout logbook in Flutter. Its entire job: show what I lifted last
 
 ```bash
 flutter analyze          # must pass clean — no warnings, no ignores added to silence them
-flutter test             # must pass
 flutter run
 dart run build_runner build --delete-conflicting-outputs   # after any Drift schema change
 ```
 
-Run `flutter analyze` and `flutter test` before telling me a task is done. If either fails, fix it or say so — don't report success.
+Run `flutter analyze` before telling me a task is done. If it fails, fix it or say so — don't report success.
 
 ## Stack
 
@@ -72,7 +69,7 @@ Pure function: ordered sets → display notation.
 
 Group consecutive sets sharing weight and reps. Hoist weight to a `@W` prefix if constant throughout, otherwise inline per run. Keep it pure and side-effect free — it renders both the session cards and the Excel `Log` sheet.
 
-Test with table-driven inline cases in `test/collapse_test.dart`. Do not use a TSV fixture here — the legacy log holds parser input, not collapse output, and contains forms collapse can never emit (`@ 45` spacing, `kg` suffixes). A curated round-trip fixture (`collapse(parse(cell)) == cell`) belongs in v2, once the parser exists.
+Tests for this are deferred — see Testing below. When they're written, use table-driven inline cases, not a TSV fixture: the legacy log holds parser input, not collapse output, and contains forms collapse can never emit (`@ 45` spacing, `kg` suffixes). A curated round-trip fixture (`collapse(parse(cell)) == cell`) belongs with the v2 parser.
 
 ## Do not add
 
@@ -140,7 +137,14 @@ One accent color, used only for Confirm. No color-coding of progress or performa
 - Business logic out of widgets. Queries in a repository layer, pure transforms in plain Dart.
 - Prefer small diffs to large rewrites. Don't scaffold beyond what the task asks for.
 - No `// ignore:` comments to quiet the analyzer.
-- Test the pure logic properly: collapse function, week derivation, set renumbering. Don't chase widget-test coverage for its own sake.
+
+## Testing
+
+**Do not write tests during implementation.** Testing is a dedicated milestone once the feature work is done — don't add test files, don't leave test TODOs, and don't scaffold test helpers "for later."
+
+Delete the stock `test/widget_test.dart`; it targets the counter scaffold and will fail once `main.dart` is replaced.
+
+Keep pure logic genuinely pure so it's testable when that milestone arrives: `logic/` must not import from `db/`, and its functions take plain Dart records rather than Drift rows.
 
 ## Milestone 1
 
@@ -163,3 +167,4 @@ One vertical slice. Nothing else.
 4. Excel export — `Log` grid sheet + `Data` flat sheet
 5. Legacy TSV importer (`docs/legacy-log.tsv`), with a review-and-confirm step
 6. Charts on the exercise history screen
+7. Test suite — pure logic first (collapse, week derivation, set renumbering), then repository tests against in-memory Drift
