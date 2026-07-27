@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Palette. Exact values, not derived — see CLAUDE.md.
-///
-/// Only [accent] is a saturated color and it belongs to Confirm alone. Nothing
-/// else on screen competes with it, and nothing is color-coded by progress or
-/// performance.
+/// Palette. Exact values, not derived — see CLAUDE.md "Theme".
 abstract final class AppColors {
   static const accent = Color(0xFF008AC9);
   static const button = Color(0xFF006E9F);
@@ -17,29 +13,22 @@ abstract final class AppColors {
   static const textPrimary = Color(0xFFE4E9ED);
   static const textSecondary = Color(0xFF7D878F);
 
-  /// Set numbers. Deliberately dimmer than [textSecondary] — the number a set
-  /// row is keyed by should recede behind the weight and reps.
+  /// Set numbers.
   static const textMuted = Color(0xFF5C666E);
 }
 
-/// Minimum tap target, applied to every interactive component below.
 const double _minTapTarget = 56;
 
-/// Monospace with tabular figures, declared once.
-///
-/// Tabular figures are what make set rows column-align: with proportional
-/// digits a `1` and a `7` take different widths and notation drifts out of
-/// alignment down a card.
+// Tabular figures are what column-align set rows: proportional digits give `1`
+// and `7` different widths and the notation drifts.
 const TextStyle _mono = TextStyle(
   fontFamilyFallback: <String>['SF Mono', 'Menlo', 'Roboto Mono', 'monospace'],
   fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
 );
 
-/// Monospace styles for numbers and collapsed notation.
-///
-/// Labels and exercise names use the system font and are not served from here.
+/// Monospace styles for numbers. Labels use the system font, not these.
 abstract final class AppText {
-  /// Collapsed set notation on session cards — `@45 123-8 4-7`.
+  /// Collapsed set notation on session cards.
   static final TextStyle notation = _mono.copyWith(
     fontSize: 16,
     height: 1.4,
@@ -59,8 +48,8 @@ abstract final class AppText {
   );
 }
 
-/// Seeding alone returns a washed-out tone-80 derivative, so every slot the app
-/// actually paints with is overridden to the exact palette value.
+// fromSeed alone returns a washed-out tone-80 derivative, so every slot the
+// app paints with is overridden to its exact palette value.
 final ColorScheme _darkScheme =
     ColorScheme.fromSeed(
       seedColor: AppColors.accent,
@@ -83,10 +72,7 @@ OutlineInputBorder _inputBorder(Color color, {double width = 1}) {
   );
 }
 
-/// App theme.
-///
-/// Dark only, permanently. There is no light palette and none is planned — the
-/// app pins [ThemeMode.dark] rather than following the system.
+/// App theme. Dark only, permanently — there is no light palette.
 abstract final class AppTheme {
   static ThemeData get dark {
     final base = ThemeData(

@@ -137,6 +137,12 @@ One accent color, used only for Confirm. No color-coding of progress or performa
 - Business logic out of widgets. Queries in a repository layer, pure transforms in plain Dart.
 - Prefer small diffs to large rewrites. Don't scaffold beyond what the task asks for.
 - No `// ignore:` comments to quiet the analyzer.
+- Comment sparingly. Don't restate the function name, and don't re-explain
+  invariants — cite them (`// invariant 9`) rather than paraphrasing, or the
+  spec ends up duplicated in docstrings and drifts.
+  Comment only non-obvious *why*: constraint interactions, ordering that looks
+  arbitrary but isn't, workarounds. Never comment *what* the code plainly does.
+  Doc comments on public APIs: one line.
 
 ## Testing
 
@@ -146,12 +152,13 @@ Delete the stock `test/widget_test.dart`; it targets the counter scaffold and wi
 
 Keep pure logic genuinely pure so it's testable when that milestone arrives: `logic/` must not import from `db/`, and its functions take plain Dart records rather than Drift rows.
 
+
 ## Milestone 1
 
 One vertical slice. Nothing else.
 
 - Drift schema and migration
-- Seed the five routines with default weekdays: Shoulders/Traps (Mon), Legs (Tue), Back (Wed), Chest (Thu), Arms (Fri) — empty exercise lists
+- Empty state on a day with no routine prompts for a name
 - Session screen: opens on today's routine, header shows routine and date
 - Add an exercise to the session — creates it in `exercises` if new, and **always appends it to the routine**. M1 has no one-off path; routines seed empty, so this is the only bootstrap. The permanence toggle lands in M2.
 - Entry loop: weight pre-filled and carried forward, reps empty and required, Confirm writes one row immediately
