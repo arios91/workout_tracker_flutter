@@ -52,7 +52,7 @@ Sets are stored as individual rows and *rendered* back into this notation. That'
 
 **Exercises** are canonical. One row per movement, so renaming `Reat Delt` fixes every session retroactively.
 
-**Routines** are permanent templates — Shoulders/Traps, Legs, Back, Chest, Arms. Each holds an ordered list of exercises and any superset pairings. Each has a *default weekday*, which only controls what the app opens on.
+**Routines** are permanent templates — Shoulders, Legs, Back, Chest, Arms. Each holds an ordered list of exercises and any superset pairings. Each has a *default weekday*, which only controls what the app opens on.
 
 **Sessions** are one actual training day: a date plus whichever routine you picked. Don't feel like chest on Thursday? Pick Arms. It logs as Arms, on Thursday's real date.
 

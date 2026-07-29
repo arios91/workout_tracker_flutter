@@ -2,6 +2,8 @@
 
 Working instructions for this repo. Design rationale lives in `README.md` — read it first, and don't restate it here.
 
+Keep your replies extremely concise and focus on conveying the key information. No unnecessary fluff, no long code snippets.
+
 ## What this is
 
 A local-only workout logbook in Flutter. Its entire job: show what I lifted last time, record what I lift today. Deliberate minimalism is the product thesis, not a shortcut.
@@ -38,6 +40,8 @@ set_entries        id, session_exercise_id, set_number,
 `weight` is a decimal (`RealColumn`) — the log contains `@27.5` and `@22.5`.
 
 `routine_exercises` and `session_exercises` are independent on purpose. The session screen is a **merge**: cards come from the template, any with `session_exercises` rows for today show today's numbers, ad-hoc additions have no template row.
+
+**There is no seed data.** The database starts completely empty; routines and exercises are created by the user as they log. Do not add a `seed.dart` or insert default rows on first run.
 
 ## Invariants
 
@@ -84,13 +88,14 @@ These were considered and rejected. Do not implement them, suggest them in code,
 - "You've done this 3 times, add it to your routine?" prompts
 - In-app charts (planned for a later phase, not now)
 - Accounts, servers, sync
+- Seed or sample data of any kind
 
 If a task seems to need one of these, stop and ask.
 
 ## Structure
 
 ```
-lib/db/            Drift tables, database, seeds
+lib/db/            Drift tables and database
 lib/repositories/  all queries
 lib/logic/         pure functions — must not import from db/
 lib/screens/       one file per screen
@@ -152,15 +157,15 @@ Delete the stock `test/widget_test.dart`; it targets the counter scaffold and wi
 
 Keep pure logic genuinely pure so it's testable when that milestone arrives: `logic/` must not import from `db/`, and its functions take plain Dart records rather than Drift rows.
 
-
 ## Milestone 1
 
 One vertical slice. Nothing else.
 
 - Drift schema and migration
-- Empty state on a day with no routine prompts for a name
+- **No seed data.** Opening a day with no routine shows an empty state prompting for a name; submitting creates the routine with `default_weekday` set to that day and drops straight into the session. Five prompts across the first week, once each.
 - Session screen: opens on today's routine, header shows routine and date
-- Add an exercise to the session — creates it in `exercises` if new, and **always appends it to the routine**. M1 has no one-off path; routines seed empty, so this is the only bootstrap. The permanence toggle lands in M2.
+- Add an exercise to the session — creates it in `exercises` if new, and **always appends it to the routine**. M1 has no one-off path; routines start empty, so this is the only way to populate them. The permanence toggle lands in M2.
+- The Add field autocompletes against existing exercise names. `NOCASE` catches `bench`/`Bench` but not near-misses like `Bench` vs `Bench Press`, and the per-exercise lookup depends on names staying canonical.
 - Entry loop: weight pre-filled and carried forward, reps empty and required, Confirm writes one row immediately
 - Card collapses to notation via the collapse function
 - Everything survives app restart
@@ -170,8 +175,8 @@ One vertical slice. Nothing else.
 ## Roadmap after M1
 
 2. Supersets, add-as-you-go toggle, routine picker for day swaps
-3. Session list and exercise history (both open the same session editor)
+3. Session list and exercise history (both open the same session editor); routine and exercise rename/delete
 4. Excel export — `Log` grid sheet + `Data` flat sheet
-5. Legacy TSV importer (`docs/legacy-log.tsv`), with a review-and-confirm step
+5. Legacy TSV importer (`docs/legacy-log.tsv`), with a review-and-confirm step. File structure is guaranteed: 5 columns; each week block is `Week N`, a blank row, a routine label row (`Shoulders / Legs / Back / Chest / Arms`), then exercise rows. **Column position maps to routine, never weekday.** File is CRLF — use `LineSplitter`.
 6. Charts on the exercise history screen
 7. Test suite — pure logic first (collapse, week derivation, set renumbering), then repository tests against in-memory Drift

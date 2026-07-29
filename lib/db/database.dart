@@ -29,25 +29,6 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
-  /// Table names and row counts, for verifying the database opened.
-  Future<List<({String name, int rows})>> tableCounts() async {
-    final tables = await customSelect(
-      "SELECT name FROM sqlite_master WHERE type = 'table' "
-      "AND name NOT LIKE 'sqlite_%' ORDER BY name",
-    ).get();
-
-    final counts = <({String name, int rows})>[];
-    for (final table in tables) {
-      final name = table.read<String>('name');
-      // Identifiers can't be bound as parameters; these come from
-      // sqlite_master, not from user input.
-      final row = await customSelect('SELECT COUNT(*) AS c FROM "$name"')
-          .getSingle();
-      counts.add((name: name, rows: row.read<int>('c')));
-    }
-    return counts;
-  }
-
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),

@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'db/database.dart';
-import 'screens/intro_screen.dart';
+import 'logic/age.dart';
+import 'repositories/exercise_repository.dart';
+import 'repositories/routine_repository.dart';
+import 'repositories/session_repository.dart';
+import 'screens/empty_state_screen.dart';
+import 'screens/session_screen.dart';
 import 'theme.dart';
 
 void main() {
@@ -19,6 +24,12 @@ class _WorkoutTrackerAppState extends State<WorkoutTrackerApp> {
   // Held here rather than built in build(): a new instance would open another
   // connection on every rebuild.
   late final AppDatabase _db = AppDatabase();
+  late final _exercises = ExerciseRepository(_db);
+  late final _routines = RoutineRepository(_db);
+  late final _sessions = SessionRepository(_db);
+
+  // Read once at startup, not at any insert site — invariant 6.
+  final DateTime _now = DateTime.now();
 
   @override
   void dispose() {
@@ -35,7 +46,31 @@ class _WorkoutTrackerAppState extends State<WorkoutTrackerApp> {
       theme: AppTheme.dark,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.dark,
-      home: IntroScreen(db: _db),
+      home: StreamBuilder<({int id, String name})?>(
+        stream: _routines.watchRoutineForWeekday(_now.weekday),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.active) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final routine = snapshot.data;
+          if (routine == null) {
+            return EmptyStateScreen(
+              weekday: _now.weekday,
+              routines: _routines,
+            );
+          }
+          return SessionScreen(
+            date: formatDate(_now),
+            routineId: routine.id,
+            routineName: routine.name,
+            exercises: _exercises,
+            routines: _routines,
+            sessions: _sessions,
+          );
+        },
+      ),
     );
   }
 }
