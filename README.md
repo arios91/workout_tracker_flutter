@@ -1,226 +1,194 @@
-# Workout Tracker
+# CLAUDE.md
 
-A logbook, not a fitness app.
+Working instructions for this repo. Design rationale lives in `README.md` — read it first, and don't restate it here.
 
-It does one thing: tell you what you lifted last time, and record what you lift today. It has no timers, no streaks, no badges, no notifications, and no opinion about whether you trained hard enough.
+## What this is
 
-> **Status:** design complete, implementation in progress. This README describes the intended v1.
+A local-only workout logbook in Flutter. Its entire job: show what I lifted last time, record what I lift today. Deliberate minimalism is the product thesis, not a shortcut.
 
----
+## Commands
 
-## Why
-
-I tracked my training in a spreadsheet for thirty weeks. Every workout app I tried asked me to do more work than the spreadsheet did — define units, pick a program, start a timer, close out a session, dismiss a notification about my streak.
-
-The spreadsheet won because it did exactly one useful thing well: I could glance at last week's cell and know what to load.
-
-So this app is a port of the spreadsheet, not a replacement for it. The design brief was: **keep everything the sheet got right, fix only the things it got wrong.**
-
-**What the sheet got right**
-
-- One glance gives you last week's numbers
-- Zero setup, zero ceremony, no concept of a "finished" workout
-- Notation dense enough to read a whole exercise in one line
-- Numbers mean whatever I want them to mean
-
-**What the sheet got wrong**
-
-- Google Drive sync failures silently lost entries
-- The numbers are trapped inside text — nothing is chartable
-- Exercise names drift (`Rear delt`, `Reat Delt`, `rear delt`) and break history lookup
-- Finding one lift's history means scrolling thirty week-blocks
-
----
-
-## The notation
-
-The app reads and writes the shorthand I already used. A digit run is a list of *set numbers*:
-
-```
-Bench @45 12345-8              five sets of 8 at 45
-Incline @45 12-8 345-6         sets 1–2 for 8 reps, sets 3–5 for 6
-Tricep M 1@120-18 2345@130-10  weight changes mid-exercise
-Leg curl 1@90-4 234@80-7       failed at 90, dropped to 80
-Curl M @41kg 1234-10           units only when they'd surprise you
+```bash
+flutter analyze          # must pass clean — no warnings, no ignores added to silence them
+flutter run
+dart run build_runner build --delete-conflicting-outputs   # after any Drift schema change
 ```
 
-Sets are stored as individual rows and *rendered* back into this notation. That's the whole trick: the database stays clean and chartable, the display stays dense and readable.
+Run `flutter analyze` before telling me a task is done. If it fails, fix it or say so — don't report success.
 
----
+## Stack
 
-## Core concepts
+- Flutter (Android + iOS)
+- Drift / SQLite for persistence — local only, no server, no accounts, no sync
+- Reactive Drift streams so the UI updates on write
 
-**Exercises** are canonical. One row per movement, so renaming `Reat Delt` fixes every session retroactively.
-
-**Routines** are permanent templates — Shoulders, Legs, Back, Chest, Arms. Each holds an ordered list of exercises and any superset pairings. Each has a *default weekday*, which only controls what the app opens on.
-
-**Sessions** are one actual training day: a date plus whichever routine you picked. Don't feel like chest on Thursday? Pick Arms. It logs as Arms, on Thursday's real date.
-
-Routines and weekdays are separate on purpose. See [Design decisions](#design-decisions).
-
----
-
-## How logging works
-
-A **set is an atomic (weight, reps) pair.** You confirm one, then the next.
-
-```
-Bench
-last time  @45 12345-8 · 7 days ago
-
-weight [ 45 ]    reps [    ]     [ Confirm ]
-```
-
-- **Weight pre-fills** from your last set and carries forward. You only touch it when you change the load.
-- **Reps start empty** and must be entered. You can't confirm a set you didn't do.
-- **Confirmed sets write immediately.** There is no save button and no draft state.
-- **You stop when you stop.** Four sets instead of five isn't an event — it's just four rows.
-
-Nothing reaches the database that you didn't deliberately confirm.
-
-**Reading the session** — a card showing numbers is done; a card showing an age hasn't been started. No checkmarks, no progress bar.
-
-**Adding mid-session** is one tap. It's a one-off by default; a toggle adds it to the routine permanently.
-
-**Supersets** live in the routine, so a pair you've linked once stays linked, and both exercises sit on one card for alternating entry.
-
----
-
-## Screens
-
-Four, plus an export button.
-
-| Screen | Purpose |
-|---|---|
-| **Session** | Today's routine. Where you spend all your time. |
-| **Session list** | Reverse chronological. Tap to open any past session *in the same editor*. |
-| **Exercise history** | One lift, newest first. The "scroll back through the sheet" move, filtered. |
-| **Routine settings** | Edit templates: exercises, order, superset pairs. |
-
----
-
-## Export
-
-One workbook, two sheets:
-
-- **`Log`** — the original grid. Week rows, routine columns, collapsed notation in each cell.
-- **`Data`** — flat, one row per set: `date, week, routine, exercise, set_number, weight, reps`.
-
-The grid keeps the format I've read for thirty weeks. The flat sheet is what makes charts possible — drop a pivot on it and you have bench weight over time in four clicks.
-
-Export is also the backup story. See [Known limitations](#known-limitations).
-
----
-
-## What this deliberately does not do
-
-This list is a feature. Every item was considered and rejected.
-
-- **No rest timers**
-- **No streaks, reminders, badges, or notifications**
-- **No 1RM estimates, volume totals, or tonnage** — weights aren't comparable across exercises (see below), so these numbers would be meaningless
-- **No body weight or measurement tracking**
-- **No unit conversion or unit selection**
-- **No completion flags, summary screens, or "end workout" button**
-- **No "you've done this 3 times, add it to your routine?" nudges**
-- **No account, no server, no sync**
-- **No in-app charts in v1** — planned for phase 3, pull-only, attached to exercise history
-
----
-
-## Design decisions
-
-Every non-obvious decision traces to something in thirty weeks of real data.
-
-**Routines are decoupled from weekdays.**
-In Week 3 I did chest on Friday and arms on Saturday. In Week 25, chest landed on Wednesday. The spreadsheet's columns weren't days — they were routines wearing a day's name. Separating them makes swapping a non-event.
-
-**Sessions pre-fill from the routine template, never from the last session.**
-Week 16's Monday has three exercises where Week 15's had five. If each session copied the previous one, a single short workout would truncate the routine permanently and silently.
-
-**"Last time" is a per-exercise lookup across all history, and displays its age.**
-Decline bench ran Weeks 2–7, disappeared for roughly seventeen weeks, and came back in Week 25. Any lookup keyed to "last session" returns nothing there. And `· 17 weeks ago` is very different information from `· 7 days ago` when you're loading the bar.
-
-**Ad-hoc exercises are one-offs by default.**
-Calf Machine appears exactly once in thirty weeks. Dip Machine appeared in Week 5 and stayed for months. Auto-adding everything would have quietly filled the Legs routine with three leg-press variants I tried once.
-
-**A set is an atomic (weight, reps) pair.**
-`Leg curl 1@90-4 234@80-7` — weight changes mid-exercise constantly. Treating weight as an exercise-level field would make the common real case an exception.
-
-**Weight is an opaque number, meaningful only within one exercise.**
-`@45` on bench means 45 lb plates per side. `@150` is a machine stack. `@41kg` is a machine labelled in kilos. There is no conversion and no cross-exercise math, because there is no correct answer.
-
-**Everything writes immediately, locally.**
-The gaps in my spreadsheet aren't sloppy logging — they're Google Drive sync failures. Data loss is the specific problem this app exists to solve.
-
----
-
-## Data model
-
-SQLite via [Drift](https://drift.simonbinder.eu/). Six tables.
+## Schema
 
 ```
 exercises          id, name UNIQUE COLLATE NOCASE
-
 routines           id, name, default_weekday, position
-
-routine_exercises  id, routine_id, exercise_id, position, superset_group
-                   → the template
-
+routine_exercises  id, routine_id, exercise_id, position, superset_group   -- template
 sessions           id, date, routine_id, note, created_at
                    UNIQUE (date, routine_id)
-
-session_exercises  id, session_id, exercise_id, position, superset_group
-                   → what actually happened
-
+session_exercises  id, session_id, exercise_id, position, superset_group   -- actual
 set_entries        id, session_exercise_id, set_number,
                    weight NOT NULL, reps NOT NULL, created_at
 ```
 
-The constraints carry the rules:
+`weight` is a decimal (`RealColumn`) — the log contains `@27.5` and `@22.5`.
 
-- **`weight`/`reps` NOT NULL** — a partial set is unrepresentable
-- **`UNIQUE (date, routine_id)`** — reopening Thursday-Chest finds your session; Thursday-Arms starts a new one
-- **`NOCASE`** on exercise names — stops `Rear delt` and `rear delt` becoming two lifts
-- **`ON DELETE RESTRICT`** on exercises — history can never be orphaned
+`superset_group` is **unused**. It exists only so the v2 importer can preserve `Superset` markers from the legacy log. Nothing in the UI reads or writes it, and no feature depends on it.
 
-**Deliberately absent:** no `is_complete`, no draft state, no weights in templates, no units column, no stored volume or 1RM, no `week_number`. Week numbers derive from the earliest session, so importing history renumbers everything automatically.
+`routine_exercises` and `session_exercises` are independent on purpose. The session screen is a **merge**: cards come from the template, any with `session_exercises` rows for today show today's numbers, ad-hoc additions have no template row.
 
-**Behavioral requirements:**
+**There is no seed data.** The database starts completely empty; routines and exercises are created by the user as they log. Do not add a `seed.dart` or insert default rows on first run.
 
-- Deleting a set renumbers the sets above it, or the collapse function renders nonsense
-- Deleting an exercise's last set removes the `session_exercises` row, reverting the card to its reference line
-- Removing an exercise from a routine deletes one `routine_exercises` row and never touches session history
-- Sessions are created lazily, on the first confirmed set — opening the app and logging nothing leaves no trace
-- Dates are local device dates stored as plain date strings, never UTC timestamps
+## Invariants
 
-The session screen is a **merge**, not a table read: cards come from `routine_exercises`, any with `session_exercises` rows for today show today's numbers, and ad-hoc additions appear with no template row.
+Violating any of these corrupts data or breaks the core interaction.
 
----
+1. **Only confirmed sets are written.** Pre-filled values are rendered from lookup at display time and never persisted. There is no draft or pending state.
+2. **`weight` and `reps` are NOT NULL.** A partial set is unrepresentable.
+3. **Sessions are created lazily**, on the first confirmed set. Opening the app and logging nothing leaves no row.
+4. **Sessions pre-fill from the routine template, never from the previous session.** Copying the last session would let one short workout truncate a routine permanently.
+5. **History is a per-exercise lookup across all history**, excluding the current session, ordered most-recent-first and paginated. Cards show the **two** most recent prior sessions by default; *show more history* fetches one additional prior session per tap. Always display each one's age.
+   **Never filter history by routine or weekday.** The same exercise done on an off-day, as a one-off, or under a different routine is part of its history. The inline card lookup and the exercise history screen share one repository method.
+6. **Session date is always a parameter.** Never call `DateTime.now()` at an insert site — the importer backdates thousands of sessions.
+7. **Dates are local device dates stored as plain date strings** (`2026-07-30`). Never UTC timestamps.
+8. **Week numbers are derived** from the earliest session. Never stored.
+9. **Deleting a set renumbers the sets above it** in that exercise, in one transaction. Gaps in `set_number` make the collapse function render nonsense.
+10. **Deleting an exercise's last set removes its `session_exercises` row**, reverting the card to its reference line.
+11. **Removing an exercise from a routine deletes one `routine_exercises` row** and never touches session history. `ON DELETE RESTRICT` on `exercises`.
+12. **Weight is opaque and comparable only within one exercise.** No unit conversion, no cross-exercise arithmetic, ever.
+13. **Writes go through a batched transaction path.** Don't build a repository that can only insert one set at a time.
+14. **Completion is derived, never stored.** A session is complete if it has sets and isn't today's. No column, no flag, no background sweep.
 
-## Stack
+## The collapse function
 
-- **Flutter** — Android and iOS
-- **Drift / SQLite** — local-only persistence, reactive queries
-- **Excel export** — two-sheet workbook via the share sheet
+Pure function: ordered sets → display notation.
 
----
+```
+[(45,8),(45,8),(45,8),(45,7)]            → "@45 123-8 4-7"
+[(120,18),(130,10),(130,10),(130,10)]    → "1@120-18 234@130-10"
+[(90,4),(80,7),(80,7),(80,7)]            → "1@90-4 234@80-7"
+```
 
-## Roadmap
+Group consecutive sets sharing weight and reps. Hoist weight to a `@W` prefix if constant throughout, otherwise inline per run. Keep it pure and side-effect free — it renders session cards, history lines, and the Excel `Log` sheet.
 
-**v1 — core logbook**
-Seeded routines, session logging with per-exercise references, add-as-you-go, routine picker, session list, exercise history, Excel export.
+Tests for this are deferred — see Testing below. When they're written, use table-driven inline cases, not a TSV fixture: the legacy log holds parser input, not collapse output, and contains forms collapse can never emit (`@ 45` spacing, `kg` suffixes). A curated round-trip fixture (`collapse(parse(cell)) == cell`) belongs with the v2 parser.
 
-**v2 — spreadsheet importer**
-Parses thirty weeks of legacy TSV notation and backfills every routine, exercise, and set. Needs a review-and-confirm step, since the source notation has real drift in it. Three hooks are already in place for this: session date is always a parameter rather than `DateTime.now()`, week numbers derive from the earliest session, and writes go through a batched transaction.
+## Do not add
 
-**v3 — charts**
-Attached to exercise history, never a dashboard. One dot per set, x = date, y = weight, reps as the tap label — because plotting weight alone would show Bench as a flat line for thirty weeks while the reps climbed 8 → 15. No trendlines, no projections, no PR badges.
+These were considered and rejected. Do not implement them, suggest them in code, or leave TODOs for them.
 
----
+- Superset pairing, linked cards, or any UI that reads `superset_group`
+- Rest timers
+- Streaks, badges, reminders, notifications
+- 1RM estimates, volume totals, tonnage
+- Body weight or measurement tracking
+- Unit selection or conversion
+- `is_complete` columns or any stored completion state — see invariant 14
+- Prompts to finish a session, or any nagging about unfinished sessions
+- Confirmation dialogs when editing a past session
+- "You've done this 3 times, add it to your routine?" prompts
+- In-app charts (planned for a later phase, not now)
+- Accounts, servers, sync
+- Seed or sample data of any kind
 
-## Known limitations
+If a task seems to need one of these, stop and ask.
 
-**Local-only means losing the phone loses the data.** The Excel export is the backup, and it is manual by design — reminders are on the anti-scope list. That's a tradeoff I'm accepting, not a solved problem.
+## Finish workout and summaries
 
-**Never merge exercises across machines.** `Lat pulldown`, `Plate Lat pulldown`, and `Pulldown M` are three machines with incompatible scales. Renaming is retroactive and safe for typos; merging them would invent a progression cliff that never happened.
+A **Finish workout** button exists in M2. It is **purely a navigation action**: it collapses the session and pops to the session list. It writes nothing.
+
+Past sessions show a summary — the collapsed exercises plus exercise and set counts. No duration, no comparison to previous sessions, no commentary. The summary is a view of the session screen for past dates, not a separate screen: there is one `SessionScreen`, and editing a past session is identical to logging today. No Edit button, no read-only mode, no prompt on edit.
+
+## Structure
+
+```
+lib/db/            Drift tables and database
+lib/repositories/  all queries
+lib/logic/         pure functions — must not import from db/
+lib/screens/       one file per screen
+lib/widgets/       shared components
+lib/theme.dart
+```
+
+Pure logic takes plain Dart records, never Drift row objects. Dependencies flow one direction: screens → repositories → db. `logic/` depends on nothing.
+
+## State
+
+No state management package. Drift streams plus `StreamBuilder` for persisted state; `StatefulWidget` for ephemeral input. Do not add Riverpod, Bloc, Provider, or GetX without asking — the database is the single source of truth, and unconfirmed input must stay local to the widget (invariant 1).
+
+## Navigation
+
+`Navigator.push` with `MaterialPageRoute`. Do not add GoRouter, auto_route, or any routing package — four screens, one level deep, no deep links.
+
+`SessionScreen` takes a date and routine id and is reused for past sessions. There is no separate read-only viewer.
+
+## Theme
+
+`lib/theme.dart`, Material 3, dark-first (`ThemeMode.system` supported).
+
+Monospace with tabular figures for all numbers and collapsed notation — set rows must column-align. System font for labels and exercise names.
+
+```
+accent           #008AC9   focus rings, active borders, accent text
+button / pressed #006E9F   filled buttons, pressed state
+onPrimary        white
+background       #0D1113
+surface / input  #181D21
+border           #2F373E
+text primary     #E4E9ED
+text secondary   #7D878F
+text muted       #5C666E   set numbers
+```
+
+`ColorScheme.fromSeed` must be overridden with `copyWith` — seeding alone returns a washed-out tone-80 derivative, not these values.
+
+One accent color, used only for Confirm. No color-coding of progress or performance. Minimum 56dp tap targets. Respect system text scaling.
+
+## Conventions
+
+- Business logic out of widgets. Queries in a repository layer, pure transforms in plain Dart.
+- Prefer small diffs to large rewrites. Don't scaffold beyond what the task asks for.
+- No `// ignore:` comments to quiet the analyzer.
+- Comment sparingly. Don't restate the function name, and don't re-explain
+  invariants — cite them (`// invariant 9`) rather than paraphrasing, or the
+  spec ends up duplicated in docstrings and drifts.
+  Comment only non-obvious *why*: constraint interactions, ordering that looks
+  arbitrary but isn't, workarounds. Never comment *what* the code plainly does.
+  Doc comments on public APIs: one line.
+
+## Testing
+
+**Do not write tests during implementation.** Testing is a dedicated milestone once the feature work is done — don't add test files, don't leave test TODOs, and don't scaffold test helpers "for later."
+
+Delete the stock `test/widget_test.dart`; it targets the counter scaffold and will fail once `main.dart` is replaced.
+
+Keep pure logic genuinely pure so it's testable when that milestone arrives: `logic/` must not import from `db/`, and its functions take plain Dart records rather than Drift rows.
+
+## Milestone 1
+
+One vertical slice. Nothing else.
+
+- Drift schema and migration
+- **No seed data.** Opening a day with no routine shows an empty state prompting for a name; submitting creates the routine with `default_weekday` set to that day and drops straight into the session. Five prompts across the first week, once each.
+- Session screen: opens on today's routine, header shows routine and date
+- Add an exercise to the session — creates it in `exercises` if new, and **always appends it to the routine**. M1 has no one-off path; routines start empty, so this is the only way to populate them. The permanence toggle lands in M2.
+- The Add field autocompletes against existing exercise names. `NOCASE` catches `bench`/`Bench` but not near-misses like `Bench` vs `Bench Press`, and the per-exercise lookup depends on names staying canonical.
+- Entry loop: weight pre-filled and carried forward, reps empty and required, Confirm writes one row immediately
+- Card shows the single most recent prior session as its reference line, with its age
+- Card collapses to notation via the collapse function
+- Everything survives app restart
+
+**Explicitly not in M1:** routine picker, session list, exercise history, paginated history, Finish button, summaries, routine settings editing, export, importer, charts.
+
+## Roadmap after M1
+
+2. Add-as-you-go toggle; routine picker for day swaps; Finish workout button (navigation only); cards show two prior sessions with paginated *show more history*
+3. Session list with past-session summaries; exercise history screen (shares the repository method from invariant 5); routine and exercise rename/delete
+4. Excel export — `Log` grid sheet + `Data` flat sheet
+5. Legacy TSV importer (`docs/legacy-log.tsv`), with a review-and-confirm step. File structure is guaranteed: 5 columns; each week block is `Week N`, a blank row, a routine label row (`Shoulders / Legs / Back / Chest / Arms`), then exercise rows. **Column position maps to routine, never weekday.** File is CRLF — use `LineSplitter`. `Superset` appears on its own line as a marker, not an exercise — never create an exercise from it; optionally record the pairing in `superset_group`.
+6. Charts on the exercise history screen
+7. Test suite — pure logic first (collapse, week derivation, set renumbering), then repository tests against in-memory Drift
