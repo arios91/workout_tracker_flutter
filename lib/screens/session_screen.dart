@@ -10,7 +10,7 @@ import '../widgets/add_exercise_sheet.dart';
 import '../widgets/exercise_card.dart';
 
 /// One day's workout. Reused for past sessions — date is always a parameter.
-class SessionScreen extends StatelessWidget {
+class SessionScreen extends StatefulWidget {
   const SessionScreen({
     super.key,
     required this.date,
@@ -28,18 +28,27 @@ class SessionScreen extends StatelessWidget {
   final RoutineRepository routines;
   final SessionRepository sessions;
 
-  Future<void> _addExercise(BuildContext context) async {
+  @override
+  State<SessionScreen> createState() => _SessionScreenState();
+}
+
+class _SessionScreenState extends State<SessionScreen> {
+  // Per-exercise *show more* taps. Ephemeral view state, so it lives here
+  // rather than in the database — the stream re-subscribes on change.
+  final _extraHistory = <int, int>{};
+
+  Future<void> _addExercise() async {
     final name = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => AddExerciseSheet(exercises: exercises),
+      builder: (_) => AddExerciseSheet(exercises: widget.exercises),
     );
     if (name == null) return;
 
-    final id = await exercises.findOrCreate(name);
+    final id = await widget.exercises.findOrCreate(name);
     // M1 has no one-off path: adding always appends to the routine.
-    await routines.addExerciseToRoutine(
-      routineId: routineId,
+    await widget.routines.addExerciseToRoutine(
+      routineId: widget.routineId,
       exerciseId: id,
     );
   }
@@ -51,9 +60,9 @@ class SessionScreen extends StatelessWidget {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(routineName),
+            Text(widget.routineName),
             Text(
-              _headerDate(date),
+              _headerDate(widget.date),
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -64,9 +73,10 @@ class SessionScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: StreamBuilder<List<SessionCard>>(
-          stream: sessions.watchSessionCards(
-            date: date,
-            routineId: routineId,
+          stream: widget.sessions.watchSessionCards(
+            date: widget.date,
+            routineId: widget.routineId,
+            extraHistory: _extraHistory,
           ),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
@@ -92,7 +102,7 @@ class SessionScreen extends StatelessWidget {
                   return Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: TextButton(
-                      onPressed: () => _addExercise(context),
+                      onPressed: _addExercise,
                       child: const Text('Add exercise'),
                     ),
                   );
@@ -101,10 +111,17 @@ class SessionScreen extends StatelessWidget {
                 return ExerciseCard(
                   key: ValueKey(card.exerciseId),
                   card: card,
-                  today: date,
-                  onConfirm: (weight, reps) => sessions.confirmSets(
-                    date: date,
-                    routineId: routineId,
+                  today: widget.date,
+                  onShowMore: () => setState(() {
+                    _extraHistory.update(
+                      card.exerciseId,
+                      (taps) => taps + 1,
+                      ifAbsent: () => 1,
+                    );
+                  }),
+                  onConfirm: (weight, reps) => widget.sessions.confirmSets(
+                    date: widget.date,
+                    routineId: widget.routineId,
                     sets: [
                       (
                         exerciseId: card.exerciseId,

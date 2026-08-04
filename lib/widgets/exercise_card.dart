@@ -12,14 +12,45 @@ class ExerciseCard extends StatefulWidget {
     required this.card,
     required this.today,
     required this.onConfirm,
+    required this.onShowMore,
   });
 
   final SessionCard card;
   final String today;
   final Future<void> Function(double weight, int reps) onConfirm;
+  final VoidCallback onShowMore;
 
   @override
   State<ExerciseCard> createState() => _ExerciseCardState();
+}
+
+/// One prior session: collapsed notation and how long ago — invariant 5.
+class _HistoryLine extends StatelessWidget {
+  const _HistoryLine({required this.session, required this.today});
+
+  final ExerciseSession session;
+  final String today;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Expanded(
+          child: Text(
+            collapse(session.sets),
+            style: AppText.notation.copyWith(color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          formatAge(session.date, today),
+          style: const TextStyle(color: AppColors.textMuted),
+        ),
+      ],
+    );
+  }
 }
 
 class _ExerciseCardState extends State<ExerciseCard> {
@@ -54,7 +85,7 @@ class _ExerciseCardState extends State<ExerciseCard> {
   String? _prefillWeight() {
     final sets = widget.card.todaysSets.isNotEmpty
         ? widget.card.todaysSets
-        : widget.card.lastTime?.sets;
+        : widget.card.history.firstOrNull?.sets;
     if (sets == null || sets.isEmpty) return null;
     return formatWeight(sets.last.weight);
   }
@@ -80,7 +111,6 @@ class _ExerciseCardState extends State<ExerciseCard> {
   Widget build(BuildContext context) {
     final card = widget.card;
     final done = card.todaysSets.isNotEmpty;
-    final last = card.lastTime;
 
     return Card(
       child: Padding(
@@ -88,30 +118,26 @@ class _ExerciseCardState extends State<ExerciseCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    card.exerciseName,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                if (!done && last != null)
-                  Text(
-                    formatAge(last.date, widget.today),
-                    style: const TextStyle(color: AppColors.textMuted),
-                  ),
-              ],
+            Text(
+              card.exerciseName,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            if (done || last != null) ...[
+            if (done) ...[
               const SizedBox(height: 6),
-              Text(
-                collapse(done ? card.todaysSets : last!.sets),
-                style: done
-                    ? AppText.notation
-                    : AppText.notation.copyWith(color: AppColors.textMuted),
-              ),
+              Text(collapse(card.todaysSets), style: AppText.notation),
             ],
+            for (final prior in card.history) ...[
+              const SizedBox(height: 6),
+              _HistoryLine(session: prior, today: widget.today),
+            ],
+            if (card.hasMoreHistory)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: widget.onShowMore,
+                  child: const Text('show more history'),
+                ),
+              ),
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,

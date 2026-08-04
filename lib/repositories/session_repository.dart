@@ -149,9 +149,13 @@ class SessionRepository {
   }
 
   /// Template exercises merged with today's sets — invariant 4.
+  ///
+  /// [extraHistory] holds per-exercise *show more* taps, each worth one
+  /// additional prior session beyond the default two.
   Stream<List<SessionCard>> watchSessionCards({
     required String date,
     required int routineId,
+    Map<int, int> extraHistory = const {},
   }) {
     // Sentinel query: any write to these tables re-runs the whole assembly.
     return _db
@@ -166,12 +170,22 @@ class SessionRepository {
           },
         )
         .watch()
-        .asyncMap((_) => _buildCards(date: date, routineId: routineId));
+        .asyncMap(
+          (_) => _buildCards(
+            date: date,
+            routineId: routineId,
+            extraHistory: extraHistory,
+          ),
+        );
   }
+
+  /// Prior sessions shown on a card before any *show more* tap — invariant 5.
+  static const defaultHistoryDepth = 2;
 
   Future<List<SessionCard>> _buildCards({
     required String date,
     required int routineId,
+    Map<int, int> extraHistory = const {},
   }) async {
     final session =
         await (_db.select(_db.sessions)..where(
@@ -192,7 +206,19 @@ class SessionRepository {
     if (ordered.isEmpty) return [];
 
     final names = await _exerciseNames(ordered);
-    final lastTimes = await _lastTimes(ordered, excludingSession: session?.id);
+
+    // Deepest card sets the page for all of them; each is then trimmed to its
+    // own depth below. One query beats one per card.
+    final depths = {
+      for (final id in ordered)
+        id: defaultHistoryDepth + (extraHistory[id] ?? 0),
+    };
+    // The extra row is the lookahead that answers "is there more?".
+    final history = await historyFor(
+      ordered,
+      excludingSession: session?.id,
+      limit: depths.values.reduce((a, b) => a > b ? a : b) + 1,
+    );
 
     return [
       for (final id in ordered)
@@ -200,7 +226,8 @@ class SessionRepository {
           exerciseId: id,
           exerciseName: names[id] ?? '',
           todaysSets: todays[id] ?? const [],
-          lastTime: lastTimes[id],
+          history: (history[id] ?? const []).take(depths[id]!).toList(),
+          hasMoreHistory: (history[id] ?? const []).length > depths[id]!,
           inRoutine: templateIds.contains(id),
         ),
     ];
@@ -248,12 +275,17 @@ class SessionRepository {
     return {for (final row in rows) row.id: row.name};
   }
 
-  /// Most recent prior performance of each exercise — invariant 5.
-  Future<Map<int, LastTime>> _lastTimes(
+  /// Prior sessions per exercise, newest first — invariant 5.
+  ///
+  /// Backs both the session card and the exercise history screen; never
+  /// filters by routine or weekday.
+  Future<Map<int, List<ExerciseSession>>> historyFor(
     List<int> exerciseIds, {
     int? excludingSession,
+    required int limit,
+    int offset = 0,
   }) async {
-    if (exerciseIds.isEmpty) return {};
+    if (exerciseIds.isEmpty || limit <= 0) return {};
 
     final placeholders = List.filled(exerciseIds.length, '?').join(', ');
     final variables = <Variable>[
@@ -265,12 +297,16 @@ class SessionRepository {
       exclusion = 'AND se.session_id != ?';
       variables.add(Variable<int>(excludingSession));
     }
+    variables
+      ..add(Variable<int>(offset))
+      ..add(Variable<int>(offset + limit));
 
     // One windowed pass rather than a query per card.
     final rows = await _db.customSelect(
       '''
       WITH ranked AS (
-        SELECT se.exercise_id, se.id AS session_exercise_id, s.date,
+        SELECT se.exercise_id, se.id AS session_exercise_id,
+               s.id AS session_id, s.date,
                ROW_NUMBER() OVER (
                  PARTITION BY se.exercise_id
                  ORDER BY s.date DESC, s.id DESC
@@ -279,12 +315,20 @@ class SessionRepository {
           JOIN sessions s ON s.id = se.session_id
          WHERE se.exercise_id IN ($placeholders)
            $exclusion
+           -- A session_exercises row can outlive its sets (invariant 10 only
+           -- clears it on the last delete). Ranking one would spend a slot on
+           -- a row the join below drops, silently shortening the page.
+           AND EXISTS (
+             SELECT 1 FROM set_entries x
+              WHERE x.session_exercise_id = se.id
+           )
       )
-      SELECT r.exercise_id, r.date, e.set_number, e.weight, e.reps
+      SELECT r.exercise_id, r.session_id, r.date, r.rn,
+             e.set_number, e.weight, e.reps
         FROM ranked r
         JOIN set_entries e ON e.session_exercise_id = r.session_exercise_id
-       WHERE r.rn = 1
-       ORDER BY r.exercise_id, e.set_number
+       WHERE r.rn > ? AND r.rn <= ?
+       ORDER BY r.exercise_id, r.rn, e.set_number
       ''',
       variables: variables,
       readsFrom: {
@@ -294,21 +338,29 @@ class SessionRepository {
       },
     ).get();
 
-    final dates = <int, String>{};
-    final sets = <int, List<SetRecord>>{};
+    // Grouped by rank, not date: one exercise now yields several sessions.
+    final result = <int, List<ExerciseSession>>{};
+    final rankSeen = <int, int>{};
     for (final row in rows) {
       final exerciseId = row.read<int>('exercise_id');
-      dates[exerciseId] = row.read<String>('date');
-      (sets[exerciseId] ??= []).add((
+      final rank = row.read<int>('rn');
+      final sessions = result[exerciseId] ??= [];
+
+      if (rankSeen[exerciseId] != rank) {
+        sessions.add((
+          sessionId: row.read<int>('session_id'),
+          date: row.read<String>('date'),
+          sets: <SetRecord>[],
+        ));
+        rankSeen[exerciseId] = rank;
+      }
+
+      sessions.last.sets.add((
         setNumber: row.read<int>('set_number'),
         weight: row.read<double>('weight'),
         reps: row.read<int>('reps'),
       ));
     }
-
-    return {
-      for (final entry in dates.entries)
-        entry.key: (date: entry.value, sets: sets[entry.key] ?? const []),
-    };
+    return result;
   }
 }
