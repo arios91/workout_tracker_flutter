@@ -37,6 +37,8 @@ set_entries        id, session_exercise_id, set_number,
 
 `weight` is a decimal (`RealColumn`) — the log contains `@27.5` and `@22.5`.
 
+`superset_group` is **unused**. It exists only so the v2 importer can preserve `Superset` markers from the legacy log. Nothing in the UI reads or writes it, and no feature depends on it.
+
 `routine_exercises` and `session_exercises` are independent on purpose. The session screen is a **merge**: cards come from the template, any with `session_exercises` rows for today show today's numbers, ad-hoc additions have no template row.
 
 **There is no seed data.** The database starts completely empty; routines and exercises are created by the user as they log. Do not add a `seed.dart` or insert default rows on first run.
@@ -79,6 +81,7 @@ Tests for this are deferred — see Testing below. When they're written, use tab
 
 These were considered and rejected. Do not implement them, suggest them in code, or leave TODOs for them.
 
+- Superset pairing, linked cards, or any UI that reads `superset_group`
 - Rest timers
 - Streaks, badges, reminders, notifications
 - 1RM estimates, volume totals, tonnage
@@ -179,13 +182,13 @@ One vertical slice. Nothing else.
 - Card collapses to notation via the collapse function
 - Everything survives app restart
 
-**Explicitly not in M1:** supersets, routine picker, session list, exercise history, paginated history, Finish button, summaries, routine settings editing, export, importer, charts.
+**Explicitly not in M1:** routine picker, session list, exercise history, paginated history, Finish button, summaries, routine settings editing, export, importer, charts.
 
 ## Roadmap after M1
 
-2. Supersets; add-as-you-go toggle; routine picker for day swaps; Finish workout button (navigation only); cards show two prior sessions with paginated *show more history*
+2. Add-as-you-go toggle; routine picker for day swaps; Finish workout button (navigation only); cards show two prior sessions with paginated *show more history*
 3. Session list with past-session summaries; exercise history screen (shares the repository method from invariant 5); routine and exercise rename/delete
 4. Excel export — `Log` grid sheet + `Data` flat sheet
-5. Legacy TSV importer (`docs/legacy-log.tsv`), with a review-and-confirm step. File structure is guaranteed: 5 columns; each week block is `Week N`, a blank row, a routine label row (`Shoulders / Legs / Back / Chest / Arms`), then exercise rows. **Column position maps to routine, never weekday.** File is CRLF — use `LineSplitter`.
+5. Legacy TSV importer (`docs/legacy-log.tsv`), with a review-and-confirm step. File structure is guaranteed: 5 columns; each week block is `Week N`, a blank row, a routine label row (`Shoulders / Legs / Back / Chest / Arms`), then exercise rows. **Column position maps to routine, never weekday.** File is CRLF — use `LineSplitter`. `Superset` appears on its own line as a marker, not an exercise — never create an exercise from it; optionally record the pairing in `superset_group`.
 6. Charts on the exercise history screen
 7. Test suite — pure logic first (collapse, week derivation, set renumbering), then repository tests against in-memory Drift
