@@ -2,8 +2,6 @@
 
 Working instructions for this repo. Design rationale lives in `README.md` — read it first, and don't restate it here.
 
-Keep your replies extremely concise and focus on conveying the key information. No unnecessary fluff, no long code snippets.
-
 ## What this is
 
 A local-only workout logbook in Flutter. Its entire job: show what I lifted last time, record what I lift today. Deliberate minimalism is the product thesis, not a shortcut.
@@ -51,7 +49,8 @@ Violating any of these corrupts data or breaks the core interaction.
 2. **`weight` and `reps` are NOT NULL.** A partial set is unrepresentable.
 3. **Sessions are created lazily**, on the first confirmed set. Opening the app and logging nothing leaves no row.
 4. **Sessions pre-fill from the routine template, never from the previous session.** Copying the last session would let one short workout truncate a routine permanently.
-5. **"Last time" is a per-exercise lookup across all history**, excluding the current session, and always displays its age. Never key it to weekday, routine, or last session.
+5. **History is a per-exercise lookup across all history**, excluding the current session, ordered most-recent-first and paginated. Cards show the **two** most recent prior sessions by default; *show more history* fetches one additional prior session per tap. Always display each one's age.
+   **Never filter history by routine or weekday.** The same exercise done on an off-day, as a one-off, or under a different routine is part of its history. The inline card lookup and the exercise history screen share one repository method.
 6. **Session date is always a parameter.** Never call `DateTime.now()` at an insert site — the importer backdates thousands of sessions.
 7. **Dates are local device dates stored as plain date strings** (`2026-07-30`). Never UTC timestamps.
 8. **Week numbers are derived** from the earliest session. Never stored.
@@ -60,6 +59,7 @@ Violating any of these corrupts data or breaks the core interaction.
 11. **Removing an exercise from a routine deletes one `routine_exercises` row** and never touches session history. `ON DELETE RESTRICT` on `exercises`.
 12. **Weight is opaque and comparable only within one exercise.** No unit conversion, no cross-exercise arithmetic, ever.
 13. **Writes go through a batched transaction path.** Don't build a repository that can only insert one set at a time.
+14. **Completion is derived, never stored.** A session is complete if it has sets and isn't today's. No column, no flag, no background sweep.
 
 ## The collapse function
 
@@ -71,7 +71,7 @@ Pure function: ordered sets → display notation.
 [(90,4),(80,7),(80,7),(80,7)]            → "1@90-4 234@80-7"
 ```
 
-Group consecutive sets sharing weight and reps. Hoist weight to a `@W` prefix if constant throughout, otherwise inline per run. Keep it pure and side-effect free — it renders both the session cards and the Excel `Log` sheet.
+Group consecutive sets sharing weight and reps. Hoist weight to a `@W` prefix if constant throughout, otherwise inline per run. Keep it pure and side-effect free — it renders session cards, history lines, and the Excel `Log` sheet.
 
 Tests for this are deferred — see Testing below. When they're written, use table-driven inline cases, not a TSV fixture: the legacy log holds parser input, not collapse output, and contains forms collapse can never emit (`@ 45` spacing, `kg` suffixes). A curated round-trip fixture (`collapse(parse(cell)) == cell`) belongs with the v2 parser.
 
@@ -84,13 +84,21 @@ These were considered and rejected. Do not implement them, suggest them in code,
 - 1RM estimates, volume totals, tonnage
 - Body weight or measurement tracking
 - Unit selection or conversion
-- Completion flags, `is_complete` columns, summary screens, end-workout buttons
+- `is_complete` columns or any stored completion state — see invariant 14
+- Prompts to finish a session, or any nagging about unfinished sessions
+- Confirmation dialogs when editing a past session
 - "You've done this 3 times, add it to your routine?" prompts
 - In-app charts (planned for a later phase, not now)
 - Accounts, servers, sync
 - Seed or sample data of any kind
 
 If a task seems to need one of these, stop and ask.
+
+## Finish workout and summaries
+
+A **Finish workout** button exists in M2. It is **purely a navigation action**: it collapses the session and pops to the session list. It writes nothing.
+
+Past sessions show a summary — the collapsed exercises plus exercise and set counts. No duration, no comparison to previous sessions, no commentary. The summary is a view of the session screen for past dates, not a separate screen: there is one `SessionScreen`, and editing a past session is identical to logging today. No Edit button, no read-only mode, no prompt on edit.
 
 ## Structure
 
@@ -167,15 +175,16 @@ One vertical slice. Nothing else.
 - Add an exercise to the session — creates it in `exercises` if new, and **always appends it to the routine**. M1 has no one-off path; routines start empty, so this is the only way to populate them. The permanence toggle lands in M2.
 - The Add field autocompletes against existing exercise names. `NOCASE` catches `bench`/`Bench` but not near-misses like `Bench` vs `Bench Press`, and the per-exercise lookup depends on names staying canonical.
 - Entry loop: weight pre-filled and carried forward, reps empty and required, Confirm writes one row immediately
+- Card shows the single most recent prior session as its reference line, with its age
 - Card collapses to notation via the collapse function
 - Everything survives app restart
 
-**Explicitly not in M1:** supersets, routine picker, session list, exercise history, routine settings editing, export, importer, charts.
+**Explicitly not in M1:** supersets, routine picker, session list, exercise history, paginated history, Finish button, summaries, routine settings editing, export, importer, charts.
 
 ## Roadmap after M1
 
-2. Supersets, add-as-you-go toggle, routine picker for day swaps
-3. Session list and exercise history (both open the same session editor); routine and exercise rename/delete
+2. Supersets; add-as-you-go toggle; routine picker for day swaps; Finish workout button (navigation only); cards show two prior sessions with paginated *show more history*
+3. Session list with past-session summaries; exercise history screen (shares the repository method from invariant 5); routine and exercise rename/delete
 4. Excel export — `Log` grid sheet + `Data` flat sheet
 5. Legacy TSV importer (`docs/legacy-log.tsv`), with a review-and-confirm step. File structure is guaranteed: 5 columns; each week block is `Week N`, a blank row, a routine label row (`Shoulders / Legs / Back / Chest / Arms`), then exercise rows. **Column position maps to routine, never weekday.** File is CRLF — use `LineSplitter`.
 6. Charts on the exercise history screen
