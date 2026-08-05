@@ -16,6 +16,20 @@ typedef ExerciseSession = ({
   List<SetRecord> sets,
 });
 
+/// One exercise's contribution to a session summary.
+typedef SummaryExercise = ({String exerciseName, List<SetRecord> sets});
+
+/// A whole session at a glance, for the home card.
+// Sets are carried rather than pre-collapsed: collapse is a display function
+// and stays out of the repository.
+typedef SessionSummary = ({
+  int sessionId,
+  int routineId,
+  String routineName,
+  List<SummaryExercise> exercises,
+  int setCount,
+});
+
 /// One exercise on the session screen.
 class SessionCard {
   const SessionCard({
@@ -30,7 +44,7 @@ class SessionCard {
   final int exerciseId;
   final String exerciseName;
 
-  // Empty means not started today, in which case the card renders lastTime
+  // Empty means not started today, in which case the card renders [history]
   // instead. There is no separate completion state.
   final List<SetRecord> todaysSets;
 

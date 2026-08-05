@@ -148,6 +148,96 @@ class SessionRepository {
     });
   }
 
+  /// A day's logged work, or null if nothing is logged — invariant 14.
+  ///
+  /// Keyed on date alone: the card shows whatever was logged, whichever
+  /// routine was picked.
+  Stream<SessionSummary?> watchSummary({required String date}) {
+    return _db
+        .customSelect(
+          'SELECT 1',
+          readsFrom: {
+            _db.sessions,
+            _db.sessionExercises,
+            _db.setEntries,
+            _db.exercises,
+            _db.routines,
+          },
+        )
+        .watch()
+        .asyncMap((_) => _buildSummary(date));
+  }
+
+  Future<SessionSummary?> _buildSummary(String date) async {
+    final rows = await _db.customSelect(
+      '''
+      SELECT s.id AS session_id, s.routine_id, r.name AS routine_name,
+             se.position, e.name AS exercise_name,
+             t.set_number, t.weight, t.reps
+        FROM sessions s
+        JOIN routines r ON r.id = s.routine_id
+        JOIN session_exercises se ON se.session_id = s.id
+        JOIN exercises e ON e.id = se.exercise_id
+        JOIN set_entries t ON t.session_exercise_id = se.id
+       -- UNIQUE is (date, routine_id), so one date can hold several sessions.
+       -- The card shows the latest started; the rest are reachable from the
+       -- session list (M3).
+       WHERE s.id = (
+         SELECT s2.id
+           FROM sessions s2
+           JOIN session_exercises se2 ON se2.session_id = s2.id
+           JOIN set_entries t2 ON t2.session_exercise_id = se2.id
+          WHERE s2.date = ?
+          ORDER BY s2.created_at DESC, s2.id DESC
+          LIMIT 1
+       )
+       ORDER BY se.position, t.set_number
+      ''',
+      variables: [Variable<String>(date)],
+      readsFrom: {
+        _db.sessions,
+        _db.sessionExercises,
+        _db.setEntries,
+        _db.exercises,
+        _db.routines,
+      },
+    ).get();
+
+    // The inner join drops set-less rows, so no rows means nothing logged —
+    // which is exactly the "not started" state (invariant 14).
+    if (rows.isEmpty) return null;
+
+    final exercises = <SummaryExercise>[];
+    int? currentPosition;
+    var setCount = 0;
+
+    for (final row in rows) {
+      final position = row.read<int>('position');
+      if (currentPosition != position) {
+        exercises.add((
+          exerciseName: row.read<String>('exercise_name'),
+          sets: <SetRecord>[],
+        ));
+        currentPosition = position;
+      }
+      exercises.last.sets.add((
+        setNumber: row.read<int>('set_number'),
+        weight: row.read<double>('weight'),
+        reps: row.read<int>('reps'),
+      ));
+      setCount++;
+    }
+
+    final first = rows.first;
+    return (
+      sessionId: first.read<int>('session_id'),
+      routineId: first.read<int>('routine_id'),
+      routineName: first.read<String>('routine_name'),
+      exercises: exercises,
+      setCount: setCount,
+    );
+  }
+
   /// Template exercises merged with today's sets — invariant 4.
   ///
   /// [extraHistory] holds per-exercise *show more* taps, each worth one

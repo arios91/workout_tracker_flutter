@@ -32,6 +32,17 @@ DateTime parseDate(String date) {
   );
 }
 
+/// Formats a stored date for a screen header — `Tue 5 Aug`.
+String formatHeaderDate(String date) {
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  final d = parseDate(date);
+  return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]}';
+}
+
 /// Formats a [DateTime] as the `YYYY-MM-DD` string the database stores.
 String formatDate(DateTime date) {
   final y = date.year.toString().padLeft(4, '0');

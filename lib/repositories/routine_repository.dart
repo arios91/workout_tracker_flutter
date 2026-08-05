@@ -32,6 +32,39 @@ class RoutineRepository {
     return (row.read(max) ?? 0) + 1;
   }
 
+  /// Finds a routine by name, or creates it. Matching is case-insensitive.
+  Future<({int id, String name})> findOrCreate(
+    String name, {
+    int? defaultWeekday,
+  }) async {
+    final trimmed = name.trim();
+    return _db.transaction(() async {
+      final existing =
+          await (_db.select(_db.routines)
+                ..where((r) => r.name.lower().equals(trimmed.toLowerCase()))
+                ..limit(1))
+              .getSingleOrNull();
+      if (existing != null) {
+        return (id: existing.id, name: existing.name);
+      }
+
+      final id = await createRoutine(
+        name: trimmed,
+        defaultWeekday: defaultWeekday,
+      );
+      return (id: id, name: trimmed);
+    });
+  }
+
+  /// Every routine, in list order.
+  Stream<List<({int id, String name})>> watchAll() {
+    final query = _db.select(_db.routines)
+      ..orderBy([(r) => OrderingTerm(expression: r.position)]);
+    return query.watch().map(
+      (rows) => [for (final row in rows) (id: row.id, name: row.name)],
+    );
+  }
+
   /// The routine assigned to this weekday, or null if the day has none.
   Stream<({int id, String name})?> watchRoutineForWeekday(int isoWeekday) {
     final query = _db.select(_db.routines)

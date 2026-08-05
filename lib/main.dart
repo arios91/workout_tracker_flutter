@@ -5,8 +5,7 @@ import 'logic/age.dart';
 import 'repositories/exercise_repository.dart';
 import 'repositories/routine_repository.dart';
 import 'repositories/session_repository.dart';
-import 'screens/empty_state_screen.dart';
-import 'screens/session_screen.dart';
+import 'screens/home_screen.dart';
 import 'theme.dart';
 
 void main() {
@@ -46,30 +45,13 @@ class _WorkoutTrackerAppState extends State<WorkoutTrackerApp> {
       theme: AppTheme.dark,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.dark,
-      home: StreamBuilder<({int id, String name})?>(
-        stream: _routines.watchRoutineForWeekday(_now.weekday),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.active) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          final routine = snapshot.data;
-          if (routine == null) {
-            return EmptyStateScreen(
-              weekday: _now.weekday,
-              routines: _routines,
-            );
-          }
-          return SessionScreen(
-            date: formatDate(_now),
-            routineId: routine.id,
-            routineName: routine.name,
-            exercises: _exercises,
-            routines: _routines,
-            sessions: _sessions,
-          );
-        },
+      // Home is the unconditional root; SessionScreen is only ever pushed.
+      home: HomeScreen(
+        today: formatDate(_now),
+        weekday: _now.weekday,
+        exercises: _exercises,
+        routines: _routines,
+        sessions: _sessions,
       ),
     );
   }

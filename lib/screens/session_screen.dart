@@ -62,7 +62,7 @@ class _SessionScreenState extends State<SessionScreen> {
           children: [
             Text(widget.routineName),
             Text(
-              _headerDate(widget.date),
+              formatHeaderDate(widget.date),
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -138,14 +138,4 @@ class _SessionScreenState extends State<SessionScreen> {
       ),
     );
   }
-}
-
-String _headerDate(String date) {
-  const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  final d = parseDate(date);
-  return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]}';
 }
