@@ -54,6 +54,14 @@ class RoutineRepository {
     });
   }
 
+  /// One routine by id, or null if it no longer exists.
+  Future<({int id, String name})?> byId(int routineId) async {
+    final row = await (_db.select(
+      _db.routines,
+    )..where((r) => r.id.equals(routineId))).getSingleOrNull();
+    return row == null ? null : (id: row.id, name: row.name);
+  }
+
   /// Every routine, in list order.
   Stream<List<({int id, String name})>> watchAll() {
     final query = _db.select(_db.routines)

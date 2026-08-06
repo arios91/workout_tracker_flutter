@@ -17,6 +17,7 @@ class AddExerciseSheet extends StatefulWidget {
 
 class _AddExerciseSheetState extends State<AddExerciseSheet> {
   final _name = TextEditingController();
+  String _query = '';
 
   @override
   void dispose() {
@@ -51,6 +52,7 @@ class _AddExerciseSheetState extends State<AddExerciseSheet> {
                   autofocus: true,
                   textCapitalization: TextCapitalization.words,
                   decoration: const InputDecoration(labelText: 'exercise'),
+                  onChanged: (value) => setState(() => _query = value),
                   onSubmitted: _submit,
                 ),
               ),
@@ -67,17 +69,25 @@ class _AddExerciseSheetState extends State<AddExerciseSheet> {
               stream: widget.exercises.watchAll(),
               builder: (context, snapshot) {
                 final all = snapshot.data ?? const [];
-                if (all.isEmpty) return const SizedBox.shrink();
+                // Substring, not prefix: typing "bench" must surface "Incline
+                // bench" too, or near-duplicates get created unseen.
+                final query = _query.trim().toLowerCase();
+                final matches = query.isEmpty
+                    ? all
+                    : all
+                          .where((e) => e.name.toLowerCase().contains(query))
+                          .toList();
+                if (matches.isEmpty) return const SizedBox.shrink();
                 return ListView.separated(
                   shrinkWrap: true,
-                  itemCount: all.length,
+                  itemCount: matches.length,
                   separatorBuilder: (_, _) => const Divider(),
                   itemBuilder: (context, i) => ListTile(
                     title: Text(
-                      all[i].name,
+                      matches[i].name,
                       style: const TextStyle(color: AppColors.textPrimary),
                     ),
-                    onTap: () => _submit(all[i].name),
+                    onTap: () => _submit(matches[i].name),
                   ),
                 );
               },

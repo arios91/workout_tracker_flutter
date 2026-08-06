@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../logic/active_session.dart';
 import '../logic/age.dart';
 import '../logic/collapse.dart';
 import '../repositories/exercise_repository.dart';
@@ -10,7 +11,7 @@ import '../theme.dart';
 import 'session_screen.dart';
 
 /// The landing screen. M1 shows today's card only — no pager, no past cards.
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     required this.today,
@@ -18,6 +19,7 @@ class HomeScreen extends StatelessWidget {
     required this.exercises,
     required this.routines,
     required this.sessions,
+    this.resume,
   });
 
   final String today;
@@ -26,20 +28,50 @@ class HomeScreen extends StatelessWidget {
   final RoutineRepository routines;
   final SessionRepository sessions;
 
-  void _openSession(
-    BuildContext context, {
+  /// A workout left in progress today, reopened once on launch.
+  final ({String date, int routineId})? resume;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Pushed after the first frame so home stays beneath it and back works.
+    final resume = widget.resume;
+    if (resume != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _resume(resume));
+    }
+  }
+
+  Future<void> _resume(({String date, int routineId}) resume) async {
+    final routine = await widget.routines.byId(resume.routineId);
+    // Deleted out from under the key: drop it rather than resume nothing.
+    if (routine == null) {
+      await ActiveSession.clear();
+      return;
+    }
+    if (!mounted) return;
+    _openSession(routineId: routine.id, routineName: routine.name);
+  }
+
+  Future<void> _openSession({
     required int routineId,
     required String routineName,
-  }) {
-    Navigator.of(context).push(
+  }) async {
+    await ActiveSession.write(date: widget.today, routineId: routineId);
+    if (!mounted) return;
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SessionScreen(
-          date: today,
+          date: widget.today,
           routineId: routineId,
           routineName: routineName,
-          exercises: exercises,
-          routines: routines,
-          sessions: sessions,
+          exercises: widget.exercises,
+          routines: widget.routines,
+          sessions: widget.sessions,
         ),
       ),
     );
@@ -51,7 +83,7 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Workout')),
       body: SafeArea(
         child: StreamBuilder<SessionSummary?>(
-          stream: sessions.watchSummary(date: today),
+          stream: widget.sessions.watchSummary(date: widget.today),
           builder: (context, summarySnapshot) {
             if (!summarySnapshot.hasData &&
                 summarySnapshot.connectionState != ConnectionState.active) {
@@ -63,7 +95,7 @@ class HomeScreen extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  formatHeaderDate(today),
+                  formatHeaderDate(widget.today),
                   style: const TextStyle(color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: 12),
@@ -71,17 +103,15 @@ class HomeScreen extends StatelessWidget {
                   _SummaryCard(
                     summary: summary,
                     onTap: () => _openSession(
-                      context,
                       routineId: summary.routineId,
                       routineName: summary.routineName,
                     ),
                   )
                 else
                   _NotStartedCard(
-                    weekday: weekday,
-                    routines: routines,
+                    weekday: widget.weekday,
+                    routines: widget.routines,
                     onStart: (routine) => _openSession(
-                      context,
                       routineId: routine.id,
                       routineName: routine.name,
                     ),

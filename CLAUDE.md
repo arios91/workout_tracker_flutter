@@ -113,8 +113,8 @@ The app's landing screen. A horizontal pager of session cards, most recent on th
 
 Cycling to another app mid-workout must return to the workout, not to home.
 
-- **Start Workout** writes the session id to `SharedPreferences`.
-- **On launch:** if the key is set *and* the stored session's date is today, push `SessionScreen` for it directly. Otherwise clear the key and show home.
+- **Start Workout** writes the date and routine id to `SharedPreferences`. Not the session id: sessions are created lazily on the first confirmed set (invariant 3), so at Start time there is none.
+- **On launch:** if the key is set *and* its date is today, push `SessionScreen` for it directly. Otherwise clear the key and show home.
 - **Finish workout** clears the key and pops to home.
 
 This key is UI state only. Nothing about completion, history, or summaries reads it, and it is never a database column (invariant 14).

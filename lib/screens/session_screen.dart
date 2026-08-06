@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../logic/active_session.dart';
 import '../logic/age.dart';
 import '../repositories/exercise_repository.dart';
 import '../repositories/records.dart';
@@ -53,12 +54,20 @@ class _SessionScreenState extends State<SessionScreen> {
     );
   }
 
+  // Navigation only: every set was written on confirm, and nothing marks a
+  // session complete (invariant 14).
+  Future<void> _finish() async {
+    await ActiveSession.clear();
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(widget.routineName),
             Text(
@@ -69,6 +78,18 @@ class _SessionScreenState extends State<SessionScreen> {
               ),
             ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _finish,
+              child: const Text('Finish workout'),
+            ),
+          ),
         ),
       ),
       body: SafeArea(
@@ -94,7 +115,7 @@ class _SessionScreenState extends State<SessionScreen> {
 
             final cards = snapshot.data!;
             return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+              padding: const EdgeInsets.all(16),
               itemCount: cards.length + 1,
               separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, i) {
