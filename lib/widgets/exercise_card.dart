@@ -16,6 +16,7 @@ class ExerciseCard extends StatefulWidget {
     required this.onShowMore,
     required this.onUpdateSet,
     required this.onDeleteSet,
+    required this.onRemove,
   });
 
   final SessionCard card;
@@ -24,6 +25,7 @@ class ExerciseCard extends StatefulWidget {
   final VoidCallback onShowMore;
   final Future<void> Function(int setId, double weight, int reps) onUpdateSet;
   final Future<void> Function(int setId) onDeleteSet;
+  final VoidCallback onRemove;
 
   @override
   State<ExerciseCard> createState() => _ExerciseCardState();
@@ -254,6 +256,15 @@ class _ExerciseCardState extends State<ExerciseCard> {
                     onPressed: () => setState(() => _editing = true),
                     icon: const Icon(Icons.edit_outlined, size: 20),
                     tooltip: 'Edit sets',
+                    color: AppColors.textSecondary,
+                  ),
+                // Shown even without sets: an untouched template exercise is
+                // exactly the one worth removing, and the pencil is absent.
+                if (!_editing)
+                  IconButton(
+                    onPressed: widget.onRemove,
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    tooltip: 'Remove exercise',
                     color: AppColors.textSecondary,
                   ),
               ],

@@ -82,6 +82,20 @@ class RoutineRepository {
     );
   }
 
+  /// Removes one exercise from a routine's template — invariant 11.
+  // Leaves a gap in position: _buildCards orders by it but never assumes
+  // contiguity, unlike set_number.
+  Future<void> removeExerciseFromRoutine({
+    required int routineId,
+    required int exerciseId,
+  }) async {
+    await (_db.delete(_db.routineExercises)..where(
+          (re) =>
+              re.routineId.equals(routineId) & re.exerciseId.equals(exerciseId),
+        ))
+        .go();
+  }
+
   /// Appends an exercise to a routine's template. No-op if already present.
   Future<void> addExerciseToRoutine({
     required int routineId,

@@ -110,6 +110,53 @@ class SessionRepository {
     return (row.read(max) ?? 0) + 1;
   }
 
+  /// Attaches an exercise to an existing session, ready to log sets against.
+  ///
+  /// Used when editing a past date, which does not read the routine template.
+  // No-op when the session does not exist: sessions stay lazily created on the
+  // first confirmed set (invariant 3).
+  Future<void> addExerciseToSession({
+    required String date,
+    required int routineId,
+    required int exerciseId,
+  }) async {
+    await _db.transaction(() async {
+      final session =
+          await (_db.select(_db.sessions)..where(
+                (s) => s.date.equals(date) & s.routineId.equals(routineId),
+              ))
+              .getSingleOrNull();
+      if (session == null) return;
+      await _findOrCreateSessionExercise(session.id, exerciseId);
+    });
+  }
+
+  /// Removes an exercise from one session, with every set it holds.
+  // set_entries cascades from session_exercises, so the sets go with the row.
+  // Nothing renumbers: invariant 9 covers gaps within an exercise, and this
+  // removes the exercise entirely.
+  Future<void> removeExerciseFromSession({
+    required String date,
+    required int routineId,
+    required int exerciseId,
+  }) async {
+    await _db.transaction(() async {
+      final session =
+          await (_db.select(_db.sessions)..where(
+                (s) => s.date.equals(date) & s.routineId.equals(routineId),
+              ))
+              .getSingleOrNull();
+      if (session == null) return;
+
+      await (_db.delete(_db.sessionExercises)..where(
+            (se) =>
+                se.sessionId.equals(session.id) &
+                se.exerciseId.equals(exerciseId),
+          ))
+          .go();
+    });
+  }
+
   /// Changes one set's numbers in place.
   // set_number is not editable, so ordering is untouched and nothing renumbers.
   Future<void> updateSet({
@@ -216,37 +263,121 @@ class SessionRepository {
     // The inner join drops set-less rows, so no rows means nothing logged —
     // which is exactly the "not started" state (invariant 14).
     if (rows.isEmpty) return null;
+    return _groupSummaries(rows).first;
+  }
 
-    final exercises = <SummaryExercise>[];
+  /// The most recent sessions with sets, newest first — invariant 14.
+  Stream<List<SessionSummary>> watchRecentSummaries({int limit = 10}) {
+    return _db
+        .customSelect(
+          'SELECT 1',
+          readsFrom: {
+            _db.sessions,
+            _db.sessionExercises,
+            _db.setEntries,
+            _db.exercises,
+            _db.routines,
+          },
+        )
+        .watch()
+        .asyncMap((_) => _buildRecentSummaries(limit));
+  }
+
+  Future<List<SessionSummary>> _buildRecentSummaries(int limit) async {
+    final rows = await _db
+        .customSelect(
+          '''
+      SELECT s.id AS session_id, s.routine_id, s.date, r.name AS routine_name,
+             se.position, e.name AS exercise_name,
+             t.id AS set_id, t.set_number, t.weight, t.reps
+        FROM sessions s
+        JOIN routines r ON r.id = s.routine_id
+        JOIN session_exercises se ON se.session_id = s.id
+        JOIN exercises e ON e.id = se.exercise_id
+        JOIN set_entries t ON t.session_exercise_id = se.id
+       WHERE s.id IN (
+         SELECT s2.id
+           FROM sessions s2
+           JOIN session_exercises se2 ON se2.session_id = s2.id
+           JOIN set_entries t2 ON t2.session_exercise_id = se2.id
+          GROUP BY s2.id
+          ORDER BY s2.date DESC, s2.id DESC
+          LIMIT ?
+       )
+       ORDER BY s.date DESC, s.id DESC, se.position, t.set_number
+      ''',
+          variables: [Variable<int>(limit)],
+          readsFrom: {
+            _db.sessions,
+            _db.sessionExercises,
+            _db.setEntries,
+            _db.exercises,
+            _db.routines,
+          },
+        )
+        .get();
+
+    return _groupSummaries(rows);
+  }
+
+  /// Walks joined rows into one summary per session, preserving row order.
+  // Breaks on session_id as well as position: position restarts at 1 in every
+  // session, so position alone would merge the first exercise of one session
+  // into the last of the previous.
+  List<SessionSummary> _groupSummaries(List<QueryRow> rows) {
+    final summaries = <SessionSummary>[];
+    final exercisesFor = <int, List<SummaryExercise>>{};
+    final setCounts = <int, int>{};
+    final order = <int>[];
+    final meta = <int, ({int routineId, String routineName, String? date})>{};
+    int? currentSession;
     int? currentPosition;
-    var setCount = 0;
 
     for (final row in rows) {
+      final sessionId = row.read<int>('session_id');
       final position = row.read<int>('position');
-      if (currentPosition != position) {
-        exercises.add((
+
+      if (!exercisesFor.containsKey(sessionId)) {
+        exercisesFor[sessionId] = [];
+        setCounts[sessionId] = 0;
+        order.add(sessionId);
+        meta[sessionId] = (
+          routineId: row.read<int>('routine_id'),
+          routineName: row.read<String>('routine_name'),
+          date: row.data.containsKey('date') ? row.read<String>('date') : null,
+        );
+      }
+
+      if (currentSession != sessionId || currentPosition != position) {
+        exercisesFor[sessionId]!.add((
           exerciseName: row.read<String>('exercise_name'),
           sets: <SetRecord>[],
         ));
+        currentSession = sessionId;
         currentPosition = position;
       }
-      exercises.last.sets.add((
+
+      exercisesFor[sessionId]!.last.sets.add((
         id: row.read<int>('set_id'),
         setNumber: row.read<int>('set_number'),
         weight: row.read<double>('weight'),
         reps: row.read<int>('reps'),
       ));
-      setCount++;
+      setCounts[sessionId] = setCounts[sessionId]! + 1;
     }
 
-    final first = rows.first;
-    return (
-      sessionId: first.read<int>('session_id'),
-      routineId: first.read<int>('routine_id'),
-      routineName: first.read<String>('routine_name'),
-      exercises: exercises,
-      setCount: setCount,
-    );
+    for (final sessionId in order) {
+      final info = meta[sessionId]!;
+      summaries.add((
+        sessionId: sessionId,
+        routineId: info.routineId,
+        routineName: info.routineName,
+        date: info.date,
+        exercises: exercisesFor[sessionId]!,
+        setCount: setCounts[sessionId]!,
+      ));
+    }
+    return summaries;
   }
 
   /// Template exercises merged with today's sets — invariant 4.
@@ -256,6 +387,7 @@ class SessionRepository {
   Stream<List<SessionCard>> watchSessionCards({
     required String date,
     required int routineId,
+    required bool isToday,
     Map<int, int> extraHistory = const {},
   }) {
     // Sentinel query: any write to these tables re-runs the whole assembly.
@@ -275,6 +407,7 @@ class SessionRepository {
           (_) => _buildCards(
             date: date,
             routineId: routineId,
+            isToday: isToday,
             extraHistory: extraHistory,
           ),
         );
@@ -286,6 +419,7 @@ class SessionRepository {
   Future<List<SessionCard>> _buildCards({
     required String date,
     required int routineId,
+    required bool isToday,
     Map<int, int> extraHistory = const {},
   }) async {
     final session =
@@ -294,12 +428,16 @@ class SessionRepository {
             ))
             .getSingleOrNull();
 
-    final templateIds = await _templateExerciseIds(routineId);
+    final templateIds = isToday
+        ? await _templateExerciseIds(routineId)
+        : const <int>[];
     final todays = session == null
         ? <int, List<SetRecord>>{}
         : await _todaysSets(session.id);
 
     // Template order first, then anything logged today that isn't in it.
+    // A past date has nothing left to pre-fill, so invariant 4 does not apply
+    // and the template would only render as cards that were never performed.
     final ordered = <int>[
       ...templateIds,
       ...todays.keys.where((id) => !templateIds.contains(id)),

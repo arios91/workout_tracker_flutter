@@ -22,6 +22,9 @@ typedef SessionSummary = ({
   int sessionId,
   int routineId,
   String routineName,
+
+  /// Null when the caller already knows the date, as the single-date read does.
+  String? date,
   List<SummaryExercise> exercises,
   int setCount,
 });

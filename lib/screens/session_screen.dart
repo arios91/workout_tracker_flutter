@@ -9,6 +9,7 @@ import '../repositories/session_repository.dart';
 import '../theme.dart';
 import '../widgets/add_exercise_sheet.dart';
 import '../widgets/exercise_card.dart';
+import '../widgets/remove_exercise_dialog.dart';
 
 /// One day's workout. Reused for past sessions — date is always a parameter.
 class SessionScreen extends StatefulWidget {
@@ -20,9 +21,13 @@ class SessionScreen extends StatefulWidget {
     required this.exercises,
     required this.routines,
     required this.sessions,
+    required this.isToday,
   });
 
   final String date;
+
+  /// Only today pre-fills from the routine template — invariant 4.
+  final bool isToday;
   final int routineId;
   final String routineName;
   final ExerciseRepository exercises;
@@ -39,19 +44,57 @@ class _SessionScreenState extends State<SessionScreen> {
   final _extraHistory = <int, int>{};
 
   Future<void> _addExercise() async {
-    final name = await showModalBottomSheet<String>(
+    final choice = await showModalBottomSheet<AddChoice>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => AddExerciseSheet(exercises: widget.exercises),
+      builder: (_) => AddExerciseSheet(
+        exercises: widget.exercises,
+        routineName: widget.routineName,
+        isToday: widget.isToday,
+      ),
     );
-    if (name == null) return;
+    if (choice == null) return;
 
-    final id = await widget.exercises.findOrCreate(name);
-    // M1 has no one-off path: adding always appends to the routine.
-    await widget.routines.addExerciseToRoutine(
-      routineId: widget.routineId,
-      exerciseId: id,
+    final id = await widget.exercises.findOrCreate(choice.name);
+    if (choice.toRoutine) {
+      await widget.routines.addExerciseToRoutine(
+        routineId: widget.routineId,
+        exerciseId: id,
+      );
+    }
+    if (choice.toSession) {
+      // Today's card would appear via the template merge anyway, but a
+      // session-only add needs the row written explicitly.
+      await widget.sessions.addExerciseToSession(
+        date: widget.date,
+        routineId: widget.routineId,
+        exerciseId: id,
+      );
+    }
+  }
+
+  Future<void> _removeExercise(SessionCard card) async {
+    final choice = await showRemoveExerciseDialog(
+      context,
+      exerciseName: card.exerciseName,
+      routineName: widget.routineName,
+      setCount: card.todaysSets.length,
     );
+    if (choice == null) return;
+
+    if (choice.fromSession) {
+      await widget.sessions.removeExerciseFromSession(
+        date: widget.date,
+        routineId: widget.routineId,
+        exerciseId: card.exerciseId,
+      );
+    }
+    if (choice.fromRoutine) {
+      await widget.routines.removeExerciseFromRoutine(
+        routineId: widget.routineId,
+        exerciseId: card.exerciseId,
+      );
+    }
   }
 
   // Navigation only: every set was written on confirm, and nothing marks a
@@ -97,6 +140,7 @@ class _SessionScreenState extends State<SessionScreen> {
           stream: widget.sessions.watchSessionCards(
             date: widget.date,
             routineId: widget.routineId,
+            isToday: widget.isToday,
             extraHistory: _extraHistory,
           ),
           builder: (context, snapshot) {
@@ -143,6 +187,7 @@ class _SessionScreenState extends State<SessionScreen> {
                   onUpdateSet: (setId, weight, reps) => widget.sessions
                       .updateSet(setEntryId: setId, weight: weight, reps: reps),
                   onDeleteSet: widget.sessions.deleteSet,
+                  onRemove: () => _removeExercise(card),
                   onConfirm: (weight, reps) => widget.sessions.confirmSets(
                     date: widget.date,
                     routineId: widget.routineId,

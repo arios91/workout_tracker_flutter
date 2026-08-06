@@ -32,6 +32,10 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # Bundled only so the one-time M5 importer can read it at runtime.
+  assets:
+    - docs/legacy-log.tsv
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

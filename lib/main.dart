@@ -4,6 +4,7 @@ import 'db/database.dart';
 import 'logic/active_session.dart';
 import 'logic/age.dart';
 import 'repositories/exercise_repository.dart';
+import 'repositories/import_repository.dart';
 import 'repositories/routine_repository.dart';
 import 'repositories/session_repository.dart';
 import 'screens/home_screen.dart';
@@ -39,6 +40,7 @@ class _WorkoutTrackerAppState extends State<WorkoutTrackerApp> {
   late final _exercises = ExerciseRepository(_db);
   late final _routines = RoutineRepository(_db);
   late final _sessions = SessionRepository(_db);
+  late final _imports = ImportRepository(_db);
 
   // Read once at startup, not at any insert site — invariant 6.
   final DateTime _now = DateTime.now();
@@ -66,6 +68,7 @@ class _WorkoutTrackerAppState extends State<WorkoutTrackerApp> {
         exercises: _exercises,
         routines: _routines,
         sessions: _sessions,
+        imports: _imports,
       ),
     );
   }
