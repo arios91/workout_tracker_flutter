@@ -110,18 +110,28 @@ class SessionRepository {
     return (row.read(max) ?? 0) + 1;
   }
 
+  /// Changes one set's numbers in place.
+  // set_number is not editable, so ordering is untouched and nothing renumbers.
+  Future<void> updateSet({
+    required int setEntryId,
+    required double weight,
+    required int reps,
+  }) async {
+    await (_db.update(_db.setEntries)..where((s) => s.id.equals(setEntryId)))
+        .write(SetEntriesCompanion(weight: Value(weight), reps: Value(reps)));
+  }
+
   /// Deletes one set and renumbers those above it — invariants 9 and 10.
   Future<void> deleteSet(int setEntryId) async {
     await _db.transaction(() async {
-      final row =
-          await (_db.select(_db.setEntries)
-                ..where((s) => s.id.equals(setEntryId)))
-              .getSingleOrNull();
+      final row = await (_db.select(
+        _db.setEntries,
+      )..where((s) => s.id.equals(setEntryId))).getSingleOrNull();
       if (row == null) return;
 
-      await (_db.delete(_db.setEntries)
-            ..where((s) => s.id.equals(setEntryId)))
-          .go();
+      await (_db.delete(
+        _db.setEntries,
+      )..where((s) => s.id.equals(setEntryId))).go();
 
       // Shifting down means each target number is already vacated, so
       // UNIQUE (session_exercise_id, set_number) never trips mid-statement.
@@ -135,15 +145,13 @@ class SessionRepository {
         updates: {_db.setEntries},
       );
 
-      final remaining =
-          await (_db.select(_db.setEntries)..where(
-                (s) => s.sessionExerciseId.equals(row.sessionExerciseId),
-              ))
-              .get();
+      final remaining = await (_db.select(
+        _db.setEntries,
+      )..where((s) => s.sessionExerciseId.equals(row.sessionExerciseId))).get();
       if (remaining.isEmpty) {
-        await (_db.delete(_db.sessionExercises)
-              ..where((se) => se.id.equals(row.sessionExerciseId)))
-            .go();
+        await (_db.delete(
+          _db.sessionExercises,
+        )..where((se) => se.id.equals(row.sessionExerciseId))).go();
       }
     });
   }
@@ -169,11 +177,12 @@ class SessionRepository {
   }
 
   Future<SessionSummary?> _buildSummary(String date) async {
-    final rows = await _db.customSelect(
-      '''
+    final rows = await _db
+        .customSelect(
+          '''
       SELECT s.id AS session_id, s.routine_id, r.name AS routine_name,
              se.position, e.name AS exercise_name,
-             t.set_number, t.weight, t.reps
+             t.id AS set_id, t.set_number, t.weight, t.reps
         FROM sessions s
         JOIN routines r ON r.id = s.routine_id
         JOIN session_exercises se ON se.session_id = s.id
@@ -193,15 +202,16 @@ class SessionRepository {
        )
        ORDER BY se.position, t.set_number
       ''',
-      variables: [Variable<String>(date)],
-      readsFrom: {
-        _db.sessions,
-        _db.sessionExercises,
-        _db.setEntries,
-        _db.exercises,
-        _db.routines,
-      },
-    ).get();
+          variables: [Variable<String>(date)],
+          readsFrom: {
+            _db.sessions,
+            _db.sessionExercises,
+            _db.setEntries,
+            _db.exercises,
+            _db.routines,
+          },
+        )
+        .get();
 
     // The inner join drops set-less rows, so no rows means nothing logged —
     // which is exactly the "not started" state (invariant 14).
@@ -221,6 +231,7 @@ class SessionRepository {
         currentPosition = position;
       }
       exercises.last.sets.add((
+        id: row.read<int>('set_id'),
         setNumber: row.read<int>('set_number'),
         weight: row.read<double>('weight'),
         reps: row.read<int>('reps'),
@@ -332,23 +343,27 @@ class SessionRepository {
   }
 
   Future<Map<int, List<SetRecord>>> _todaysSets(int sessionId) async {
-    final query = _db.select(_db.sessionExercises).join([
-      innerJoin(
-        _db.setEntries,
-        _db.setEntries.sessionExerciseId.equalsExp(_db.sessionExercises.id),
-      ),
-    ])
-      ..where(_db.sessionExercises.sessionId.equals(sessionId))
-      ..orderBy([
-        OrderingTerm(expression: _db.sessionExercises.position),
-        OrderingTerm(expression: _db.setEntries.setNumber),
-      ]);
+    final query =
+        _db.select(_db.sessionExercises).join([
+            innerJoin(
+              _db.setEntries,
+              _db.setEntries.sessionExerciseId.equalsExp(
+                _db.sessionExercises.id,
+              ),
+            ),
+          ])
+          ..where(_db.sessionExercises.sessionId.equals(sessionId))
+          ..orderBy([
+            OrderingTerm(expression: _db.sessionExercises.position),
+            OrderingTerm(expression: _db.setEntries.setNumber),
+          ]);
 
     final result = <int, List<SetRecord>>{};
     for (final row in await query.get()) {
       final exerciseId = row.readTable(_db.sessionExercises).exerciseId;
       final entry = row.readTable(_db.setEntries);
       (result[exerciseId] ??= []).add((
+        id: entry.id,
         setNumber: entry.setNumber,
         weight: entry.weight,
         reps: entry.reps,
@@ -358,10 +373,9 @@ class SessionRepository {
   }
 
   Future<Map<int, String>> _exerciseNames(List<int> exerciseIds) async {
-    final rows =
-        await (_db.select(_db.exercises)
-              ..where((e) => e.id.isIn(exerciseIds)))
-            .get();
+    final rows = await (_db.select(
+      _db.exercises,
+    )..where((e) => e.id.isIn(exerciseIds))).get();
     return {for (final row in rows) row.id: row.name};
   }
 
@@ -392,8 +406,9 @@ class SessionRepository {
       ..add(Variable<int>(offset + limit));
 
     // One windowed pass rather than a query per card.
-    final rows = await _db.customSelect(
-      '''
+    final rows = await _db
+        .customSelect(
+          '''
       WITH ranked AS (
         SELECT se.exercise_id, se.id AS session_exercise_id,
                s.id AS session_id, s.date,
@@ -414,19 +429,16 @@ class SessionRepository {
            )
       )
       SELECT r.exercise_id, r.session_id, r.date, r.rn,
-             e.set_number, e.weight, e.reps
+             e.id AS set_id, e.set_number, e.weight, e.reps
         FROM ranked r
         JOIN set_entries e ON e.session_exercise_id = r.session_exercise_id
        WHERE r.rn > ? AND r.rn <= ?
        ORDER BY r.exercise_id, r.rn, e.set_number
       ''',
-      variables: variables,
-      readsFrom: {
-        _db.sessionExercises,
-        _db.sessions,
-        _db.setEntries,
-      },
-    ).get();
+          variables: variables,
+          readsFrom: {_db.sessionExercises, _db.sessions, _db.setEntries},
+        )
+        .get();
 
     // Grouped by rank, not date: one exercise now yields several sessions.
     final result = <int, List<ExerciseSession>>{};
@@ -446,6 +458,7 @@ class SessionRepository {
       }
 
       sessions.last.sets.add((
+        id: row.read<int>('set_id'),
         setNumber: row.read<int>('set_number'),
         weight: row.read<double>('weight'),
         reps: row.read<int>('reps'),

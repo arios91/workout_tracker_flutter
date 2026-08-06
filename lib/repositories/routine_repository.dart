@@ -9,10 +9,7 @@ class RoutineRepository {
   final AppDatabase _db;
 
   /// Creates a routine, appended at the end of the list.
-  Future<int> createRoutine({
-    required String name,
-    int? defaultWeekday,
-  }) async {
+  Future<int> createRoutine({required String name, int? defaultWeekday}) async {
     final position = await _nextPosition();
     return _db
         .into(_db.routines)
@@ -27,8 +24,9 @@ class RoutineRepository {
 
   Future<int> _nextPosition() async {
     final max = _db.routines.position.max();
-    final row = await (_db.selectOnly(_db.routines)..addColumns([max]))
-        .getSingle();
+    final row = await (_db.selectOnly(
+      _db.routines,
+    )..addColumns([max])).getSingle();
     return (row.read(max) ?? 0) + 1;
   }
 

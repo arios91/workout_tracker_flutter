@@ -10,11 +10,7 @@ typedef PendingSet = ({int exerciseId, double weight, int reps});
 
 /// One prior performance of an exercise, from any session.
 // sessionId is carried so the history screen can open the session it names.
-typedef ExerciseSession = ({
-  int sessionId,
-  String date,
-  List<SetRecord> sets,
-});
+typedef ExerciseSession = ({int sessionId, String date, List<SetRecord> sets});
 
 /// One exercise's contribution to a session summary.
 typedef SummaryExercise = ({String exerciseName, List<SetRecord> sets});

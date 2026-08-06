@@ -119,15 +119,14 @@ class _SessionScreenState extends State<SessionScreen> {
                       ifAbsent: () => 1,
                     );
                   }),
+                  onUpdateSet: (setId, weight, reps) => widget.sessions
+                      .updateSet(setEntryId: setId, weight: weight, reps: reps),
+                  onDeleteSet: widget.sessions.deleteSet,
                   onConfirm: (weight, reps) => widget.sessions.confirmSets(
                     date: widget.date,
                     routineId: widget.routineId,
                     sets: [
-                      (
-                        exerciseId: card.exerciseId,
-                        weight: weight,
-                        reps: reps,
-                      ),
+                      (exerciseId: card.exerciseId, weight: weight, reps: reps),
                     ],
                   ),
                 );
